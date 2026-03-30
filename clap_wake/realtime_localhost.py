@@ -261,6 +261,8 @@ def build_index_html(public_config: dict[str, Any]) -> str:
             "prompt": "Welcome Prompt",
             "session": "Session Status",
             "events": "Realtime Log",
+            "transcript": "Live Voice",
+            "transcript_waiting": "En attente de la premiere phrase de l'assistant...",
             "hint": "This is the clap-triggered Realtime page. It should open fast, speak first, and stay usable while the session is live.",
         },
         "en": {
@@ -280,6 +282,8 @@ def build_index_html(public_config: dict[str, Any]) -> str:
             "prompt": "Welcome Prompt",
             "session": "Session Status",
             "events": "Realtime Log",
+            "transcript": "Live Voice",
+            "transcript_waiting": "Waiting for the assistant's first sentence...",
             "hint": "This is the clap-triggered Realtime page. It should open fast, speak first, and stay usable while the session is live.",
         },
     }[language]
@@ -365,6 +369,11 @@ def build_index_html(public_config: dict[str, Any]) -> str:
               </div>
             </div>
 
+            <div class="hud-panel-soft clip-path-chamfer-lg p-5 max-w-3xl mx-auto w-full">
+              <p class="text-[10px] font-label tracking-[0.2em] text-primary/60">{copy["transcript"].upper()}</p>
+              <p id="liveTranscript" class="mt-3 text-base md:text-lg font-headline tracking-[0.04em] text-on-background min-h-[3.5rem] leading-7">{copy["transcript_waiting"]}</p>
+            </div>
+
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div class="hud-panel-soft clip-path-chamfer-lg p-5">
                 <p class="text-[10px] font-label tracking-[0.2em] text-primary/60">{copy["assistant"].upper()}</p>
@@ -419,7 +428,9 @@ def build_index_html(public_config: dict[str, Any]) -> str:
               </div>
               <span class="material-symbols-outlined text-primary/70 text-3xl">terminal</span>
             </div>
-            <pre id="log" class="hud-log flex-1"></pre>
+            <div class="flex-1 min-h-0 overflow-hidden">
+              <pre id="log" class="hud-log h-full"></pre>
+            </div>
           </div>
         </section>
       </div>
@@ -512,6 +523,8 @@ body {
   background: rgba(0,0,0,0.18);
   border: 1px solid rgba(129,236,255,0.08);
   padding: 16px;
+  height: 100%;
+  max-height: 26rem;
 }
 .hud-log::-webkit-scrollbar { width: 8px; height: 8px; }
 .hud-log::-webkit-scrollbar-thumb { background: rgba(129,236,255,0.18); }
@@ -537,6 +550,7 @@ const COPY = PUBLIC_CONFIG.language === "en"
       openaiError: "OpenAI error",
       event: "Event",
       disconnected: "Disconnected.",
+      transcriptWaiting: "Waiting for the assistant's first sentence...",
       assistantIsNamed: "Your name is",
       personIsNamed: "The person's name is",
       stayBrief: "Stay brief, warm, energetic, and end with one useful question.",
@@ -559,6 +573,7 @@ const COPY = PUBLIC_CONFIG.language === "en"
       openaiError: "Erreur OpenAI",
       event: "Event",
       disconnected: "Deconnecte.",
+      transcriptWaiting: "En attente de la premiere phrase de l'assistant...",
       assistantIsNamed: "Tu t'appelles",
       personIsNamed: "La personne s'appelle",
       stayBrief: "Reste bref, chaleureux, energique, et termine par une question utile.",
@@ -570,6 +585,7 @@ const COPY = PUBLIC_CONFIG.language === "en"
 
 const statusEl = document.getElementById("status");
 const logEl = document.getElementById("log");
+const transcriptEl = document.getElementById("liveTranscript");
 const connectButton = document.getElementById("connectButton");
 const disconnectButton = document.getElementById("disconnectButton");
 
@@ -577,6 +593,9 @@ let pc = null;
 let dc = null;
 let stream = null;
 let audioEl = null;
+let liveTranscript = "";
+let logLines = [];
+const MAX_LOG_LINES = 160;
 
 function setStatus(text) {{
   statusEl.textContent = text;
@@ -584,8 +603,22 @@ function setStatus(text) {{
 
 function log(text) {{
   const stamp = new Date().toLocaleTimeString();
-  logEl.textContent += `[${{stamp}}] ${{text}}\\n`;
+  logLines.push(`[${{stamp}}] ${{text}}`);
+  if (logLines.length > MAX_LOG_LINES) {{
+    logLines = logLines.slice(-MAX_LOG_LINES);
+  }}
+  logEl.textContent = logLines.join("\\n");
   logEl.scrollTop = logEl.scrollHeight;
+}}
+
+function resetTranscript() {{
+  liveTranscript = "";
+  transcriptEl.textContent = COPY.transcriptWaiting || "";
+}}
+
+function appendTranscript(delta) {{
+  liveTranscript += delta;
+  transcriptEl.textContent = liveTranscript.trim() || (COPY.transcriptWaiting || "");
 }}
 
 async function connect() {{
@@ -621,6 +654,7 @@ async function connect() {{
     dc = pc.createDataChannel("oai-events");
     dc.addEventListener("open", () => {{
       log(COPY.channelOpened);
+      resetTranscript();
       sendWelcomeBootstrap();
     }});
     dc.addEventListener("message", (event) => {{
@@ -724,17 +758,28 @@ function buildWelcomeMessage() {{
 }}
 
 function handleRealtimeEvent(event) {{
+  if (
+    event.type === "response.created" ||
+    event.type === "response.output_item.added"
+  ) {{
+    resetTranscript();
+    return;
+  }}
+
   if (event.type === "response.audio_transcript.delta" && event.delta) {{
+    appendTranscript(event.delta);
     log(`${{COPY.assistant}}: ${{event.delta}}`);
     return;
   }}
 
   if (event.type === "response.output_audio_transcript.delta" && event.delta) {{
+    appendTranscript(event.delta);
     log(`${{COPY.assistant}}: ${{event.delta}}`);
     return;
   }}
 
   if (event.type === "response.text.delta" && event.delta) {{
+    appendTranscript(event.delta);
     log(`${{COPY.assistant}}: ${{event.delta}}`);
     return;
   }}
@@ -785,5 +830,6 @@ disconnectButton.addEventListener("click", () => {{
   disconnect();
 }});
 
+resetTranscript();
 connect();
 """

@@ -93,6 +93,7 @@ The interactive setup lets you:
 - choose the default language
 - set your OpenAI API key and store it in `.env`
 - choose an AI assistant name
+- test the key system permissions up front and open the matching settings panel when needed
 - calibrate your personal double-clap signature
 - choose one or more launch targets
 - add custom targets such as URLs, apps, files, folders, terminal commands, or shell commands

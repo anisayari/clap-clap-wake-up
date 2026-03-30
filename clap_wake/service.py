@@ -8,7 +8,7 @@ from threading import Event, Lock
 from .audio import run_microphone_loop
 from .config import YOUTUBE_FALLBACK_URL, build_clap_config
 from .launcher import launch_target, open_url_foreground
-from .media import find_highway_mp3, pick_random_audio_from_folder
+from .media import find_highway_mp3, list_audio_from_folder, pick_next_audio_from_folder, pick_random_audio_from_folder
 from .player import Mp3Player
 from .realtime_localhost import ensure_realtime_server, stop_realtime_server
 from .window_layout import WindowBounds, plan_launch_layout
@@ -96,8 +96,42 @@ class WakeService:
     def stop_media(self) -> None:
         self.player.stop()
 
+    def toggle_media(self) -> None:
+        state = self.player.state()
+        if state.get("playing"):
+            self.player.pause()
+            return
+        if state.get("paused"):
+            self.player.resume()
+            return
+        self.play_media_only()
+
+    def next_media(self) -> None:
+        media = self.config.get("media", {})
+        current_path = self.player.state().get("current_path")
+
+        if self.can_skip_media():
+            next_path = pick_next_audio_from_folder(media.get("selected_folder_path"), current_path=current_path)
+            if next_path is not None:
+                self.logger.info("Playing next track: %s", next_path)
+                self.player.play(next_path, volume=self.music_volume())
+                return
+
+        self.play_media_only()
+
     def player_state(self) -> dict[str, object]:
-        return self.player.state()
+        state = self.player.state()
+        state["can_skip"] = self.can_skip_media()
+        return state
+
+    def can_skip_media(self) -> bool:
+        media = self.config.get("media", {})
+        folder = media.get("selected_folder_path")
+        if not folder:
+            return False
+        if media.get("mode") not in {"folder_random", "auto_downloads"}:
+            return False
+        return len(list_audio_from_folder(folder)) > 1
 
     def launch_selected_targets(self, target_bounds: list[WindowBounds] | None = None) -> None:
         realtime_index = next(

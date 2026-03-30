@@ -3,16 +3,18 @@ from __future__ import annotations
 import json
 import os
 import re
+import select
 import sys
 from copy import deepcopy
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-try:
-    from prompt_toolkit.shortcuts import checkboxlist_dialog, radiolist_dialog
-except Exception:  # pragma: no cover - optional runtime dependency
-    checkboxlist_dialog = None
-    radiolist_dialog = None
+if os.name == "nt":  # pragma: no cover - windows-only path
+    import msvcrt
+else:  # pragma: no cover - exercised indirectly via behavior, not platform-specific imports
+    import termios
+    import tty
 
 from .audio import (
     ClapConfig,
@@ -23,6 +25,8 @@ from .audio import (
 )
 from .discovery import detect_known_targets
 from .env_utils import load_env_value, save_env_value
+from .media import find_highway_mp3
+from .permissions import get_required_permission_keys, open_permission_settings, probe_permission
 from .sound_library import (
     choose_audio_file_dialog,
     choose_directory_dialog,
@@ -205,6 +209,17 @@ TEXTS = {
         "openai_hint_missing": "optionnelle pour Localhost Welcome",
         "openai_prompt": "🔑 Cle OpenAI [{hint}, Entrer pour ne pas changer] : ",
         "openai_saved": "💾 Cle enregistree dans {path}",
+        "permissions_title": "🔐 Verification des permissions",
+        "permissions_intro": "On teste maintenant les permissions systeme utiles pour eviter les popups au premier lancement.",
+        "permissions_ok": "✅ {label}: OK",
+        "permissions_blocked": "⚠️  {label}: acces non confirme",
+        "permissions_details": "   {message}",
+        "permissions_open_settings": "⚙️  Ouvrir les reglages systeme pour {label} ? [Y/n] : ",
+        "permissions_retry": "🔁 Retester {label} maintenant ? [Y/n] : ",
+        "permissions_skip": "On continue. Tu pourras refaire cette verification plus tard.",
+        "permissions_done": "✨ Verification des permissions terminee.",
+        "permissions_opened": "📂 Reglages ouverts pour {label}.",
+        "permissions_unavailable": "Impossible d'ouvrir automatiquement les reglages pour {label}.",
         "video_prompt": "🔗 URL video [{default}] : ",
         "video_invalid": "URL invalide. Il faut commencer par http:// ou https://",
         "realtime_title": "🌐 Reglages Localhost Welcome",
@@ -291,6 +306,17 @@ TEXTS = {
         "openai_hint_missing": "optional for Localhost Welcome",
         "openai_prompt": "🔑 OpenAI key [{hint}, press Enter to keep current] : ",
         "openai_saved": "💾 Key saved in {path}",
+        "permissions_title": "🔐 Permissions check",
+        "permissions_intro": "The setup now tests the system permissions that matter so the first real launch is smoother.",
+        "permissions_ok": "✅ {label}: OK",
+        "permissions_blocked": "⚠️  {label}: access not confirmed",
+        "permissions_details": "   {message}",
+        "permissions_open_settings": "⚙️  Open system settings for {label}? [Y/n] : ",
+        "permissions_retry": "🔁 Retry {label} now? [Y/n] : ",
+        "permissions_skip": "Continuing. You can run this check again later.",
+        "permissions_done": "✨ Permission check complete.",
+        "permissions_opened": "📂 Settings opened for {label}.",
+        "permissions_unavailable": "Could not open system settings automatically for {label}.",
         "video_prompt": "🔗 Video URL [{default}] : ",
         "video_invalid": "Invalid URL. It must start with http:// or https://",
         "realtime_title": "🌐 Localhost Welcome settings",
@@ -315,30 +341,228 @@ def t(language: str, key: str, **kwargs: Any) -> str:
 
 
 def terminal_ui_available() -> bool:
+    term = os.environ.get("TERM", "")
     return (
-        checkboxlist_dialog is not None
-        and radiolist_dialog is not None
-        and sys.stdin.isatty()
+        sys.stdin.isatty()
         and sys.stdout.isatty()
-        and os.environ.get("TERM", "")
-        and os.environ.get("TERM") != "dumb"
+        and (os.name == "nt" or (term and term != "dumb"))
     )
+
+
+def _ansi_enabled() -> bool:
+    return os.name != "nt" or os.environ.get("WT_SESSION") or os.environ.get("TERM_PROGRAM")
+
+
+def _cursor_up(lines: int) -> str:
+    return f"\x1b[{lines}A" if lines > 0 else ""
+
+
+def _clear_line() -> str:
+    return "\r\x1b[2K" if _ansi_enabled() else "\r"
+
+
+@contextmanager
+def _hidden_cursor() -> Any:
+    if _ansi_enabled():
+        sys.stdout.write("\x1b[?25l")
+        sys.stdout.flush()
+    try:
+        yield
+    finally:
+        if _ansi_enabled():
+            sys.stdout.write("\x1b[?25h")
+            sys.stdout.flush()
+
+
+@contextmanager
+def _raw_keyboard_mode() -> Any:
+    if os.name == "nt":  # pragma: no cover - windows-only path
+        yield
+        return
+
+    fd = sys.stdin.fileno()
+    original_settings = termios.tcgetattr(fd)
+    try:
+        tty.setraw(fd)
+        yield
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, original_settings)
+
+
+def _read_key() -> str:
+    if os.name == "nt":  # pragma: no cover - windows-only path
+        first = msvcrt.getwch()
+        if first in {"\x00", "\xe0"}:
+            second = msvcrt.getwch()
+            return {
+                "H": "up",
+                "P": "down",
+            }.get(second, "")
+        if first == "\r":
+            return "enter"
+        if first == " ":
+            return "space"
+        if first == "\x1b":
+            return "escape"
+        if first.lower() == "q":
+            return "quit"
+        return ""
+
+    fd = sys.stdin.fileno()
+    first = os.read(fd, 1)
+    if first in {b"\r", b"\n"}:
+        return "enter"
+    if first == b" ":
+        return "space"
+    if first == b"\x1b":
+        sequence = b""
+        while select.select([fd], [], [], 0.01)[0]:
+            sequence += os.read(fd, 1)
+            if len(sequence) >= 2:
+                break
+        if sequence[:2] == b"[A":
+            return "up"
+        if sequence[:2] == b"[B":
+            return "down"
+        return "escape"
+    if first.lower() == b"q":
+        return "quit"
+    return ""
+
+
+def _render_inline_selector(
+    title: str,
+    hint: str,
+    options: list[str],
+    cursor_index: int,
+    selected_indexes: set[int] | None = None,
+) -> list[str]:
+    lines = ["", title, hint, ""]
+    for index, option in enumerate(options):
+        marker = "›"
+        cursor = marker if index == cursor_index else " "
+        if selected_indexes is None:
+            lines.append(f" {cursor} {option}")
+        else:
+            checked = "x" if index in selected_indexes else " "
+            lines.append(f" {cursor} [{checked}] {option}")
+    lines.append("")
+    return lines
+
+
+def _clear_rendered_lines(lines_rendered: int) -> None:
+    if lines_rendered <= 0:
+        return
+    if _ansi_enabled():
+        sys.stdout.write(_cursor_up(lines_rendered))
+    for index in range(lines_rendered):
+        sys.stdout.write(_clear_line())
+        if index < lines_rendered - 1:
+            sys.stdout.write("\n")
+    if _ansi_enabled():
+        sys.stdout.write(_cursor_up(lines_rendered - 1))
+    sys.stdout.flush()
+
+
+def inline_single_select(
+    title: str,
+    hint: str,
+    options: list[tuple[str, str]],
+    default_value: str,
+) -> str | None:
+    values = [value for value, _label in options]
+    labels = [label for _value, label in options]
+    current_index = values.index(default_value) if default_value in values else 0
+    lines_rendered = 0
+
+    with _hidden_cursor(), _raw_keyboard_mode():
+        while True:
+            if lines_rendered and _ansi_enabled():
+                sys.stdout.write(_cursor_up(lines_rendered))
+            rendered = _render_inline_selector(title, hint, labels, current_index)
+            for line in rendered:
+                sys.stdout.write(f"{_clear_line()}{line}\n")
+            sys.stdout.flush()
+            lines_rendered = len(rendered)
+
+            key = _read_key()
+            if key == "up":
+                current_index = (current_index - 1) % len(labels)
+                continue
+            if key == "down":
+                current_index = (current_index + 1) % len(labels)
+                continue
+            if key == "enter":
+                _clear_rendered_lines(lines_rendered)
+                return values[current_index]
+            if key in {"escape", "quit"}:
+                _clear_rendered_lines(lines_rendered)
+                return None
+
+
+def inline_multi_select(
+    title: str,
+    hint: str,
+    options: list[tuple[int, str]],
+    default_values: list[int] | None = None,
+) -> list[int] | None:
+    values = [value for value, _label in options]
+    labels = [label for _value, label in options]
+    selected_indexes = {
+        index for index, value in enumerate(values) if value in (default_values or [])
+    }
+    current_index = min(selected_indexes) if selected_indexes else 0
+    lines_rendered = 0
+
+    with _hidden_cursor(), _raw_keyboard_mode():
+        while True:
+            if lines_rendered and _ansi_enabled():
+                sys.stdout.write(_cursor_up(lines_rendered))
+            rendered = _render_inline_selector(
+                title=title,
+                hint=hint,
+                options=labels,
+                cursor_index=current_index,
+                selected_indexes=selected_indexes,
+            )
+            for line in rendered:
+                sys.stdout.write(f"{_clear_line()}{line}\n")
+            sys.stdout.flush()
+            lines_rendered = len(rendered)
+
+            key = _read_key()
+            if key == "up":
+                current_index = (current_index - 1) % len(labels)
+                continue
+            if key == "down":
+                current_index = (current_index + 1) % len(labels)
+                continue
+            if key == "space":
+                if current_index in selected_indexes:
+                    selected_indexes.remove(current_index)
+                else:
+                    selected_indexes.add(current_index)
+                continue
+            if key == "enter":
+                _clear_rendered_lines(lines_rendered)
+                return [values[index] for index in sorted(selected_indexes)]
+            if key in {"escape", "quit"}:
+                _clear_rendered_lines(lines_rendered)
+                return None
 
 
 def choose_language(default_language: str | None) -> str:
     current = default_language or DEFAULT_LANGUAGE
     if terminal_ui_available():
-        result = radiolist_dialog(
+        result = inline_single_select(
             title="🌍 Clap Wake Up",
-            text=t(current, "choose_language_selector"),
-            values=[
+            hint=t(current, "choose_language_selector"),
+            options=[
                 ("fr", "🇫🇷 Français"),
                 ("en", "🇬🇧 English"),
             ],
-            default=current if current in {"fr", "en"} else DEFAULT_LANGUAGE,
-            ok_text="OK",
-            cancel_text="Keep",
-        ).run()
+            default_value=current if current in {"fr", "en"} else DEFAULT_LANGUAGE,
+        )
         if result in {"fr", "en"}:
             return result
         return current if current in {"fr", "en"} else DEFAULT_LANGUAGE
@@ -486,6 +710,7 @@ def prompt_setup(config_path: Path | None = None) -> Path:
 
     config["selected_targets"] = selected_targets
     config["media"]["library_dir"] = str(get_media_library_dir())
+    prompt_for_permissions(config, language)
     prompt_for_media(config, language)
     prompt_for_clap_calibration(config, language)
     if any(target["id"] == "welcome_localhost" for target in selected_targets):
@@ -549,22 +774,26 @@ def prompt_for_targets_selection(
     ]
 
     if terminal_ui_available():
-        values: list[tuple[str, str]] = []
+        values: list[tuple[int, str]] = []
         for index, target in enumerate(AVAILABLE_TARGETS, start=1):
             detected_label = format_detected_target(detected_targets.get(target["id"]))
             suffix = f"  ✅ {detected_label}" if detected_label else ""
-            values.append((str(index), f"{target['label']}{suffix}"))
+            values.append((index, f"{target['label']}{suffix}"))
 
-        selected = checkboxlist_dialog(
-            title=t(language, "targets_selector_title"),
-            text=t(language, "targets_selector"),
-            values=values,
-            default_values=[str(index) for index in default_selected],
-            ok_text="OK",
-            cancel_text="Text mode",
-        ).run()
-        if selected:
-            return [int(item) for item in selected]
+        while True:
+            selected = inline_multi_select(
+                title=t(language, "targets_selector_title"),
+                hint=t(language, "targets_selector"),
+                options=values,
+                default_values=default_selected,
+            )
+            if selected is None:
+                break
+            if selected:
+                return selected
+            print()
+            print(t(language, "selection_empty"))
+            print()
         print()
         print(t(language, "selector_fallback"))
         print()
@@ -765,6 +994,19 @@ def default_prompt(title: str, default: str, hint: str | None = None) -> str:
     return " ".join(parts) + " : "
 
 
+def prompt_yes_no(language: str, prompt: str, default: bool) -> bool:
+    default_value = "y" if default else "n"
+    while True:
+        raw = input(prompt).strip().casefold()
+        if not raw:
+            return default
+        if raw in {"y", "yes", "oui", "o"}:
+            return True
+        if raw in {"n", "no", "non"}:
+            return False
+        print(t(language, "yes_no_retry"))
+
+
 def load_existing_or_default(config_path: Path | None) -> dict[str, Any]:
     if config_path and config_path.exists():
         return load_config(config_path)
@@ -796,6 +1038,7 @@ def migrate_config(config: dict[str, Any]) -> None:
 
 def prompt_for_media(config: dict[str, Any], language: str) -> None:
     media = config["media"]
+    seed_default_media_selection(media)
     existing_sound = media.get("selected_sound_path")
     current_sound = describe_existing_sound(existing_sound)
     default_choice = default_media_choice(media)
@@ -900,6 +1143,24 @@ def default_media_choice(media: dict[str, Any]) -> str:
     if mode == "none":
         return "6"
     return "5"
+
+
+def seed_default_media_selection(media: dict[str, Any]) -> None:
+    if media.get("selected_sound_path") or media.get("selected_url"):
+        return
+    if media.get("mode") not in {"auto_downloads", "", None}:
+        return
+
+    downloads_dir = media.get("selected_folder_path") or get_default_downloads_dir()
+    media["selected_folder_path"] = str(Path(downloads_dir).expanduser())
+    detected = find_highway_mp3(downloads_dir)
+    if detected and detected.exists():
+        media["mode"] = "single_file"
+        media["selected_sound_path"] = str(detected)
+        return
+
+    media["mode"] = "url"
+    media["selected_url"] = media.get("youtube_fallback_url") or YOUTUBE_FALLBACK_URL
 
 
 def media_selection_is_ready(media: dict[str, Any], choice: str) -> bool:
@@ -1119,6 +1380,52 @@ def maybe_prompt_openai_env(config: dict[str, Any], language: str) -> None:
         save_env_value(env_path, "OPENAI_API_KEY", raw)
         config["realtime"]["api_key"] = None
         print(t(language, "openai_saved", path=env_path))
+
+
+def prompt_for_permissions(config: dict[str, Any], language: str) -> None:
+    print()
+    print(t(language, "permissions_title"))
+    print(t(language, "permissions_intro"))
+    print()
+
+    for key in get_required_permission_keys(sys.platform, config.get("selected_targets", [])):
+        while True:
+            result = probe_permission(key, microphone_config=config.get("microphone", {}))
+            if result.granted:
+                print(t(language, "permissions_ok", label=result.label))
+                print(t(language, "permissions_details", message=result.message))
+                print()
+                break
+
+            print(t(language, "permissions_blocked", label=result.label))
+            print(t(language, "permissions_details", message=result.message))
+
+            if result.can_open_settings:
+                if prompt_yes_no(
+                    language,
+                    t(language, "permissions_open_settings", label=result.label),
+                    default=True,
+                ):
+                    if open_permission_settings(key):
+                        print(t(language, "permissions_opened", label=result.label))
+                    else:
+                        print(t(language, "permissions_unavailable", label=result.label))
+            else:
+                print(t(language, "permissions_unavailable", label=result.label))
+
+            if prompt_yes_no(
+                language,
+                t(language, "permissions_retry", label=result.label),
+                default=True,
+            ):
+                print()
+                continue
+
+            print(t(language, "permissions_skip"))
+            print()
+            break
+
+    print(t(language, "permissions_done"))
 
 
 def prompt_for_realtime(config: dict[str, Any], language: str) -> None:

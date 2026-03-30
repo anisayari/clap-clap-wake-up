@@ -13,6 +13,7 @@ from clap_wake.config import (
     prompt_for_custom_targets,
     prompt_for_custom_target,
     prompt_for_targets_selection,
+    seed_default_media_selection,
 )
 from clap_wake.sound_library import copy_audio_to_library, normalize_user_path
 
@@ -66,13 +67,9 @@ class ConfigParsingTests(unittest.TestCase):
         self.assertEqual(target["id"], "custom_path")
         self.assertEqual(target["path"], "/tmp/demo folder")
 
-    def test_prompt_for_targets_selection_uses_checkbox_dialog_when_available(self) -> None:
-        class FakeDialog:
-            def run(self):
-                return ["2", "5"]
-
+    def test_prompt_for_targets_selection_uses_inline_selector_when_available(self) -> None:
         with patch("clap_wake.config.terminal_ui_available", return_value=True):
-            with patch("clap_wake.config.checkboxlist_dialog", return_value=FakeDialog()):
+            with patch("clap_wake.config.inline_multi_select", return_value=[2, 5]):
                 selected = prompt_for_targets_selection("fr", {})
 
         self.assertEqual(selected, [2, 5])
@@ -124,6 +121,25 @@ class ConfigParsingTests(unittest.TestCase):
         media["selected_sound_path"] = "/tmp/song.mp3"
         self.assertEqual(default_media_choice(media), "1")
         self.assertTrue(media_selection_is_ready(media, "1"))
+
+    def test_seed_default_media_selection_prefers_local_highway_mp3(self) -> None:
+        media = dict(DEFAULT_CONFIG["media"])
+        with TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "highway.mp3"
+            path.write_bytes(b"")
+            with patch("clap_wake.config.find_highway_mp3", return_value=path):
+                seed_default_media_selection(media)
+
+        self.assertEqual(media["mode"], "single_file")
+        self.assertEqual(media["selected_sound_path"], str(path))
+
+    def test_seed_default_media_selection_falls_back_to_acdc_youtube_url(self) -> None:
+        media = dict(DEFAULT_CONFIG["media"])
+        with patch("clap_wake.config.find_highway_mp3", return_value=None):
+            seed_default_media_selection(media)
+
+        self.assertEqual(media["mode"], "url")
+        self.assertEqual(media["selected_url"], DEFAULT_CONFIG["media"]["youtube_fallback_url"])
 
     def test_prompt_for_custom_targets_keeps_existing_targets_by_default(self) -> None:
         existing = [{"id": "custom_url", "label": "Docs", "url": "https://example.com"}]

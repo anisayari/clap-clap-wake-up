@@ -12,7 +12,6 @@ dependencies = [
   "numpy>=1.26,<3",
   "Pillow>=10,<12",
   "pygame>=2.6,<3",
-  "prompt_toolkit>=3.0.43,<4",
   "pystray>=0.19.5,<1",
   "sounddevice>=0.4.7,<1",
 ]

@@ -96,6 +96,16 @@ class DashboardRuntime:
             return
         self.service.pause_media()
 
+    def toggle_music(self) -> None:
+        if self.service is None:
+            return
+        self.service.toggle_media()
+
+    def next_music(self) -> None:
+        if self.service is None:
+            return
+        self.service.next_media()
+
     def resume_music(self) -> None:
         if self.service is None:
             return
@@ -138,6 +148,7 @@ class DashboardRuntime:
             "playing": False,
             "paused": False,
             "current_path": None,
+            "can_skip": False,
         }
         return {
             "status": self._status,
@@ -180,11 +191,17 @@ class DashboardRuntime:
                 if self.path in {"/", "/index.html"}:
                     self._send_html(build_dashboard_html())
                     return
+                if self.path == "/settings":
+                    self._send_html(build_dashboard_settings_html())
+                    return
                 if self.path == "/styles.css":
                     self._send_css(build_dashboard_css())
                     return
                 if self.path == "/app.js":
                     self._send_js(build_dashboard_js())
+                    return
+                if self.path == "/settings.js":
+                    self._send_js(build_dashboard_settings_js())
                     return
                 if self.path == "/state":
                     self._send_json(runtime.state())
@@ -202,6 +219,14 @@ class DashboardRuntime:
                         return
                     if self.path == "/player/play":
                         runtime.play_media()
+                        self._send_json({"ok": True})
+                        return
+                    if self.path == "/player/toggle":
+                        runtime.toggle_music()
+                        self._send_json({"ok": True})
+                        return
+                    if self.path == "/player/next":
+                        runtime.next_music()
                         self._send_json({"ok": True})
                         return
                     if self.path == "/player/pause":
@@ -466,11 +491,19 @@ def build_dashboard_html() -> str:
 </div>
 </div>
 <div class="flex items-center gap-3 text-primary">
+<div class="hidden xl:flex items-center gap-2">
+<div class="hud-chip px-3 py-2 flex items-center gap-2 text-[10px] font-headline tracking-[0.18em] max-w-[18rem]">
+<span class="material-symbols-outlined text-[16px]">music_note</span>
+<span id="headerPlayerState" class="truncate">PLAYER_IDLE</span>
+</div>
+<button id="headerToggleButton" class="material-symbols-outlined text-xl hover:text-cyan-300 transition-colors" title="Play or pause media">play_circle</button>
+<button id="headerNextButton" class="material-symbols-outlined text-xl hover:text-cyan-300 transition-colors hidden" title="Next track">skip_next</button>
+</div>
 <div class="hud-chip px-3 py-2 flex items-center gap-2 text-[10px] font-headline tracking-[0.18em]">
 <span class="w-2 h-2 rounded-full bg-primary shadow-[0_0_8px_rgba(129,236,255,0.7)]"></span>
 <span id="headerStatus">LISTENER_BOOTING</span>
 </div>
-<button id="reloadButton" class="material-symbols-outlined text-xl hover:text-cyan-300 transition-colors" title="Open settings">settings</button>
+<button id="reloadButton" class="material-symbols-outlined text-xl hover:text-cyan-300 transition-colors" title="Open config page">settings</button>
 <button id="triggerButton" class="material-symbols-outlined text-xl hover:text-cyan-300 transition-colors" title="Replay trigger">play_circle</button>
 </div>
 </div>
@@ -513,19 +546,19 @@ def build_dashboard_html() -> str:
 
 <main class="ml-24 mt-16 min-h-[calc(100vh-64px)] p-6 md:p-8">
 <div class="max-w-[1600px] mx-auto flex flex-col gap-6">
-<section class="grid grid-cols-1 xl:grid-cols-[1.2fr_0.9fr] gap-6 items-stretch">
-<div class="hud-panel clip-path-chamfer-lg p-6 md:p-8 relative overflow-hidden min-h-[30rem]">
+<section class="grid grid-cols-1 xl:grid-cols-[1.15fr_0.85fr] gap-4 items-stretch">
+<div class="hud-panel clip-path-chamfer-lg p-5 md:p-6 relative overflow-hidden min-h-[24rem]">
 <div class="absolute inset-0 pointer-events-none opacity-50">
 <div class="absolute -top-12 left-10 w-48 h-48 rounded-full bg-primary/10 blur-3xl"></div>
 <div class="absolute bottom-10 right-8 w-56 h-56 rounded-full bg-secondary/8 blur-3xl"></div>
 </div>
-<div class="relative h-full flex flex-col justify-between gap-8">
+<div class="relative h-full flex flex-col justify-between gap-6">
 <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-6">
-<div class="max-w-xl">
+<div class="max-w-lg">
 <p class="text-[11px] font-label tracking-[0.22em] text-primary/70 mb-3">WAKE_ENGINE / LIVE OVERVIEW</p>
-<h1 class="text-4xl md:text-5xl font-headline font-semibold tracking-[0.08em] text-on-background">Double clap, then launch everything.</h1>
-<p class="mt-4 text-sm text-on-surface-variant leading-6">This dashboard controls the microphone listener, clap profile, music playback, selected targets, and the local OpenAI realtime welcome flow.</p>
-<div class="mt-6 flex flex-wrap gap-3">
+<h1 class="text-3xl md:text-4xl font-headline font-semibold tracking-[0.08em] text-on-background">Double clap, then launch everything.</h1>
+<p class="mt-3 text-sm text-on-surface-variant leading-6">Compact control panel for the microphone listener, clap profile, selected targets, local media, and the OpenAI realtime wake flow.</p>
+<div class="mt-5 flex flex-wrap gap-3">
 <div class="hud-chip px-3 py-2">
 <span class="text-[10px] font-label tracking-[0.18em] text-primary/60">ASSISTANT</span>
 <p id="assistantNameDisplay" class="text-sm font-headline tracking-[0.18em] text-primary mt-1">JARVIS</p>
@@ -540,14 +573,14 @@ def build_dashboard_html() -> str:
 </div>
 </div>
 </div>
-<div class="relative mx-auto xl:mx-0 flex items-center justify-center min-w-[18rem] min-h-[18rem]">
-<div class="absolute w-80 h-80 border border-primary/12 rounded-full animate-pulse-ring"></div>
-<div class="absolute w-64 h-64 border border-primary/18 rounded-full animate-pulse-ring" style="animation-delay: 0.8s"></div>
-<div class="absolute w-[21rem] h-[21rem] border-t-2 border-b-2 border-primary/25 rounded-full animate-[spin_12s_linear_infinite]"></div>
-<div class="absolute w-[18rem] h-[18rem] border-l border-r border-secondary/20 rounded-full animate-[spin_18s_linear_infinite_reverse]"></div>
-<div class="w-52 h-52 rounded-full border border-primary/40 bg-gradient-to-br from-primary/28 via-surface-container to-surface-container-lowest backdrop-blur-xl shadow-[0_0_70px_rgba(129,236,255,0.18)] flex flex-col items-center justify-center relative overflow-hidden">
+<div class="relative mx-auto xl:mx-0 flex items-center justify-center min-w-[14rem] min-h-[14rem]">
+<div class="absolute w-60 h-60 border border-primary/12 rounded-full animate-pulse-ring"></div>
+<div class="absolute w-48 h-48 border border-primary/18 rounded-full animate-pulse-ring" style="animation-delay: 0.8s"></div>
+<div class="absolute w-[16rem] h-[16rem] border-t-2 border-b-2 border-primary/25 rounded-full animate-[spin_12s_linear_infinite]"></div>
+<div class="absolute w-[13rem] h-[13rem] border-l border-r border-secondary/20 rounded-full animate-[spin_18s_linear_infinite_reverse]"></div>
+<div class="w-40 h-40 rounded-full border border-primary/40 bg-gradient-to-br from-primary/28 via-surface-container to-surface-container-lowest backdrop-blur-xl shadow-[0_0_70px_rgba(129,236,255,0.18)] flex flex-col items-center justify-center relative overflow-hidden">
 <div class="absolute inset-0 bg-radial-gradient from-primary/20 via-transparent to-transparent animate-pulse"></div>
-<span class="material-symbols-outlined text-7xl text-primary drop-shadow-[0_0_12px_rgba(129,236,255,0.7)]" style="font-variation-settings: 'FILL' 1;">neurology</span>
+<span class="material-symbols-outlined text-6xl text-primary drop-shadow-[0_0_12px_rgba(129,236,255,0.7)]" style="font-variation-settings: 'FILL' 1;">neurology</span>
 <p class="mt-3 text-[11px] font-label tracking-[0.28em] text-primary/70">REALTIME_CORE</p>
 <div class="mt-3 flex gap-1">
 <div class="w-1 h-4 bg-primary animate-[bounce_1s_infinite]"></div>
@@ -559,27 +592,17 @@ def build_dashboard_html() -> str:
 </div>
 </div>
 </div>
-<div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+<div class="grid grid-cols-1 gap-3">
 <button id="engageButton" class="hud-action clip-path-chamfer-lg px-4 py-4 text-left hover:bg-primary/10 transition-colors">
 <p class="text-[10px] font-label tracking-[0.2em] text-primary/60">DOUBLE_CLAP_TEST</p>
 <p class="mt-2 text-sm font-headline tracking-[0.16em] text-on-background">Replay full trigger</p>
 <p class="mt-1 text-[11px] text-on-surface-variant">Relaunch targets and replay media now.</p>
 </button>
-<button id="pauseButton" class="hud-action clip-path-chamfer-lg px-4 py-4 text-left hover:bg-primary/10 transition-colors">
-<p class="text-[10px] font-label tracking-[0.2em] text-primary/60">MUSIC_CONTROL</p>
-<p class="mt-2 text-sm font-headline tracking-[0.16em] text-on-background">Pause soundtrack</p>
-<p class="mt-1 text-[11px] text-on-surface-variant">Lower the local media bus instantly.</p>
-</button>
-<button id="resumeButton" class="hud-action clip-path-chamfer-lg px-4 py-4 text-left hover:bg-primary/10 transition-colors">
-<p class="text-[10px] font-label tracking-[0.2em] text-primary/60">MUSIC_CONTROL</p>
-<p class="mt-2 text-sm font-headline tracking-[0.16em] text-on-background">Resume soundtrack</p>
-<p class="mt-1 text-[11px] text-on-surface-variant">Bring the soundtrack back after speech.</p>
-</button>
 </div>
 </div>
 </div>
 
-<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
 <div class="hud-panel-soft clip-path-chamfer-lg p-5">
 <div class="flex items-start justify-between gap-4">
 <div>
@@ -622,7 +645,7 @@ def build_dashboard_html() -> str:
 </div>
 </section>
 
-<section class="grid grid-cols-1 lg:grid-cols-[1.2fr_0.8fr_0.8fr] gap-6">
+<section class="grid grid-cols-1 lg:grid-cols-[1.15fr_0.78fr_0.78fr] gap-4">
 <div class="hud-panel clip-path-chamfer-lg p-5">
 <div class="flex items-center justify-between gap-4 mb-5">
 <div>
@@ -698,34 +721,16 @@ def build_dashboard_html() -> str:
 </div>
 </section>
 
-<section class="grid grid-cols-1 lg:grid-cols-[1fr_0.9fr] gap-6">
+<section class="grid grid-cols-1 gap-4">
 <div class="hud-panel clip-path-chamfer-lg p-5">
 <div class="flex items-center justify-between gap-4 mb-5">
 <div>
-<p class="text-[10px] font-label tracking-[0.2em] text-primary/60">LOCAL_ACTIONS</p>
-<h2 class="mt-1 text-xl font-headline tracking-[0.12em] text-on-background">Playback + listener controls</h2>
+<p class="text-[10px] font-label tracking-[0.2em] text-primary/60">SYSTEM_PATHS</p>
+<h2 class="mt-1 text-xl font-headline tracking-[0.12em] text-on-background">Runtime metadata</h2>
 </div>
+<div class="flex flex-col items-end gap-3">
 <span id="satelliteStatus" class="text-[10px] font-headline tracking-[0.18em] text-primary">ENCRYPTED_99%</span>
-</div>
-<div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
-<button id="pauseButtonSecondary" class="hud-action clip-path-chamfer-lg px-4 py-4 text-left hover:bg-primary/10 transition-colors">
-<p class="text-[10px] font-label tracking-[0.18em] text-primary/60">PLAYER</p>
-<p class="mt-2 text-sm font-headline tracking-[0.14em] text-on-background">Pause</p>
-</button>
-<button id="resumeButtonSecondary" class="hud-action clip-path-chamfer-lg px-4 py-4 text-left hover:bg-primary/10 transition-colors">
-<p class="text-[10px] font-label tracking-[0.18em] text-primary/60">PLAYER</p>
-<p class="mt-2 text-sm font-headline tracking-[0.14em] text-on-background">Resume</p>
-</button>
-<button id="stopMusicButton" class="hud-action clip-path-chamfer-lg px-4 py-4 text-left hover:bg-primary/10 transition-colors">
-<p class="text-[10px] font-label tracking-[0.18em] text-primary/60">PLAYER</p>
-<p class="mt-2 text-sm font-headline tracking-[0.14em] text-on-background">Stop music</p>
-</button>
-<button id="playButtonSecondary" class="hud-action clip-path-chamfer-lg px-4 py-4 text-left hover:bg-primary/10 transition-colors">
-<p class="text-[10px] font-label tracking-[0.18em] text-primary/60">PLAYER</p>
-<p class="mt-2 text-sm font-headline tracking-[0.14em] text-on-background">Replay media</p>
-</button>
-</div>
-<div class="mt-4 flex items-end gap-1">
+<div class="flex items-end gap-1">
 <div id="signalBar1" class="w-1 bg-primary h-2"></div>
 <div id="signalBar2" class="w-1 bg-primary h-4"></div>
 <div id="signalBar3" class="w-1 bg-primary h-6"></div>
@@ -733,14 +738,6 @@ def build_dashboard_html() -> str:
 <div id="signalBar5" class="w-1 bg-surface-variant h-5"></div>
 </div>
 </div>
-
-<div class="hud-panel clip-path-chamfer-lg p-5">
-<div class="flex items-center justify-between gap-4 mb-5">
-<div>
-<p class="text-[10px] font-label tracking-[0.2em] text-primary/60">SYSTEM_PATHS</p>
-<h2 class="mt-1 text-xl font-headline tracking-[0.12em] text-on-background">Runtime metadata</h2>
-</div>
-<span class="material-symbols-outlined text-primary/70 text-3xl">dns</span>
 </div>
 <div class="space-y-4">
 <div>
@@ -771,38 +768,6 @@ def build_dashboard_html() -> str:
 </section>
 </div>
 
-<section id="settingsPanel" class="fixed right-8 bottom-14 z-50 w-[34rem] max-w-[calc(100vw-7rem)] h-[32rem] hidden bg-surface-container/85 backdrop-blur-xl border border-primary/20 clip-path-chamfer-lg shadow-[0_0_40px_rgba(129,236,255,0.18)]">
-<div class="h-full flex flex-col">
-<div class="flex items-center justify-between px-5 py-4 border-b border-primary/10">
-<div>
-<p class="text-[10px] font-label text-primary tracking-[0.2em]">SYSTEM_CONSOLE</p>
-<h2 class="text-sm font-headline tracking-[0.18em] text-on-surface">PROMPT • KEY • CONFIG</h2>
-</div>
-<div class="flex items-center gap-3">
-<button id="panelReloadButton" class="text-[10px] font-headline tracking-[0.18em] text-primary/70 hover:text-primary transition-colors">RELOAD</button>
-<button id="closeSettingsButton" class="material-symbols-outlined text-primary hover:text-cyan-300 transition-colors">close</button>
-</div>
-</div>
-<div class="grid grid-cols-1 gap-4 px-5 py-4 flex-1 min-h-0">
-<label class="block">
-<span class="text-[10px] font-headline text-primary/80 block mb-2 tracking-[0.18em]">WELCOME_PROMPT</span>
-<textarea id="promptInput" rows="4" class="hud-input hud-scroll w-full text-[12px] px-3 py-3 resize-none"></textarea>
-</label>
-<label class="block">
-<span class="text-[10px] font-headline text-primary/80 block mb-2 tracking-[0.18em]">OPENAI_KEY</span>
-<input id="openaiKeyInput" type="password" placeholder="Leave blank to keep current key" class="hud-input w-full text-[12px] px-3 py-3"/>
-</label>
-<label class="block flex-1 min-h-0">
-<span class="text-[10px] font-headline text-primary/80 block mb-2 tracking-[0.18em]">CONFIG_JSON</span>
-<textarea id="configEditor" rows="12" class="hud-input hud-scroll w-full h-[14rem] text-[11px] px-3 py-3 resize-none font-mono leading-relaxed"></textarea>
-</label>
-</div>
-<div class="px-5 py-4 border-t border-primary/10 flex items-center justify-between gap-4">
-<span class="text-[10px] text-on-surface-variant">Edit the runtime config, assistant prompt, and OpenAI key here.</span>
-<button id="panelSaveButton" class="bg-primary text-on-primary-fixed px-4 py-2 text-[10px] font-headline tracking-[0.22em] hover:bg-primary-fixed transition-colors">SAVE_CONFIG</button>
-</div>
-</div>
-</section>
 </main>
 <script src="/app.js" type="module"></script>
 </body></html>
@@ -813,14 +778,136 @@ def build_dashboard_css() -> str:
     return ""
 
 
+def build_dashboard_settings_html() -> str:
+    return """<!DOCTYPE html>
+<html class="dark" lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>CLAP WAKE UP: CONFIG</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&amp;family=Inter:wght@300;400;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+tailwind.config = {
+  darkMode: "class",
+  theme: {
+    extend: {
+      colors: {
+        primary: "#81ecff",
+        background: "#0a0e14",
+        "surface-container": "#151a21",
+        "surface-container-low": "#0f141a",
+        "surface-container-high": "#1b2028",
+        "surface-variant": "#20262f",
+        "on-background": "#f1f3fc",
+        "on-surface-variant": "#a8abb3",
+        error: "#ff716c"
+      },
+      fontFamily: {
+        headline: ["Space Grotesk"],
+        body: ["Inter"],
+        label: ["Space Grotesk"]
+      }
+    }
+  }
+}
+</script>
+<style>
+body {
+  background: #0a0e14;
+  color: #f1f3fc;
+  font-family: Inter, sans-serif;
+}
+.grid-bg {
+  background-image:
+    linear-gradient(to right, rgba(129, 236, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(129, 236, 255, 0.05) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+.scanline {
+  background: linear-gradient(to bottom, transparent 50%, rgba(129, 236, 255, 0.02) 50%);
+  background-size: 100% 4px;
+}
+.hud-panel {
+  background:
+    linear-gradient(180deg, rgba(129,236,255,0.10), rgba(129,236,255,0.00) 24%),
+    rgba(15, 20, 26, 0.72);
+  backdrop-filter: blur(18px);
+  border: 1px solid rgba(129,236,255,0.14);
+}
+.hud-input {
+  background: rgba(15, 20, 26, 0.75);
+  border: 1px solid rgba(129,236,255,0.18);
+  color: #f1f3fc;
+}
+.hud-input:focus {
+  outline: none;
+  border-color: rgba(129,236,255,0.6);
+  box-shadow: 0 0 0 1px rgba(129,236,255,0.2), 0 0 24px rgba(129,236,255,0.12);
+}
+.clip-path-chamfer-lg {
+  clip-path: polygon(0 0, 95% 0, 100% 5%, 100% 100%, 5% 100%, 0 95%);
+}
+.hud-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+.hud-scroll::-webkit-scrollbar-thumb {
+  background: rgba(129,236,255,0.18);
+}
+</style>
+</head>
+<body class="min-h-screen overflow-hidden">
+<div class="fixed inset-0 grid-bg pointer-events-none"></div>
+<div class="fixed inset-0 scanline pointer-events-none"></div>
+<main class="relative min-h-screen p-6 md:p-8">
+  <div class="max-w-[1200px] mx-auto flex flex-col gap-5">
+    <header class="hud-panel clip-path-chamfer-lg p-5 flex items-center justify-between gap-4">
+      <div>
+        <p class="text-[10px] font-label tracking-[0.22em] text-primary/70">CONFIG_CONSOLE</p>
+        <h1 class="mt-2 text-2xl font-headline tracking-[0.12em]">Prompt, key, and runtime config.</h1>
+        <p id="settingsMeta" class="mt-2 text-sm text-on-surface-variant">Loading runtime metadata...</p>
+      </div>
+      <div class="flex items-center gap-3">
+        <a href="/" class="px-4 py-2 text-[10px] font-headline tracking-[0.22em] border border-cyan-400/20 text-primary hover:bg-cyan-400/10 transition-colors">BACK</a>
+        <button id="settingsReloadButton" class="px-4 py-2 text-[10px] font-headline tracking-[0.22em] border border-cyan-400/20 text-primary hover:bg-cyan-400/10 transition-colors">RELOAD</button>
+        <button id="settingsSaveButton" class="px-4 py-2 text-[10px] font-headline tracking-[0.22em] bg-primary text-black hover:opacity-90 transition-opacity">SAVE_CONFIG</button>
+      </div>
+    </header>
+
+    <section class="grid grid-cols-1 xl:grid-cols-[0.9fr_1.1fr] gap-5">
+      <div class="hud-panel clip-path-chamfer-lg p-5 flex flex-col gap-5">
+        <div>
+          <p class="text-[10px] font-label tracking-[0.2em] text-primary/60">OPENAI_KEY</p>
+          <input id="openaiKeyInput" type="password" placeholder="Leave blank to keep current key" class="hud-input w-full text-[12px] px-3 py-3 mt-3"/>
+          <p id="openaiHint" class="mt-2 text-sm text-on-surface-variant">KEY_STATUS: UNKNOWN</p>
+        </div>
+        <div>
+          <p class="text-[10px] font-label tracking-[0.2em] text-primary/60">WELCOME_PROMPT</p>
+          <textarea id="promptInput" rows="8" class="hud-input hud-scroll w-full text-[12px] px-3 py-3 mt-3 resize-none"></textarea>
+        </div>
+        <div>
+          <p class="text-[10px] font-label tracking-[0.2em] text-primary/60">STATUS</p>
+          <p id="message" class="mt-2 text-sm text-on-surface-variant">Ready.</p>
+        </div>
+      </div>
+
+      <div class="hud-panel clip-path-chamfer-lg p-5">
+        <p class="text-[10px] font-label tracking-[0.2em] text-primary/60">CONFIG_JSON</p>
+        <textarea id="configEditor" rows="24" class="hud-input hud-scroll w-full h-[70vh] text-[11px] px-3 py-3 mt-3 resize-none font-mono leading-relaxed"></textarea>
+      </div>
+    </section>
+  </div>
+</main>
+<script src="/settings.js" type="module"></script>
+</body></html>
+"""
+
+
 def build_dashboard_js() -> str:
     return """
 const statusPill = document.getElementById("statusPill");
 const playerPill = document.getElementById("playerPill");
-const promptInput = document.getElementById("promptInput");
-const openaiKeyInput = document.getElementById("openaiKeyInput");
-const openaiHint = document.getElementById("openaiHint");
-const configEditor = document.getElementById("configEditor");
 const messageEl = document.getElementById("message");
 const listenerMeta = document.getElementById("listenerMeta");
 const configPathMeta = document.getElementById("configPathMeta");
@@ -828,12 +915,14 @@ const dashboardUrlMeta = document.getElementById("dashboardUrlMeta");
 const keyMeta = document.getElementById("keyMeta");
 const assistantNameDisplay = document.getElementById("assistantNameDisplay");
 const headerStatus = document.getElementById("headerStatus");
+const headerPlayerState = document.getElementById("headerPlayerState");
+const headerToggleButton = document.getElementById("headerToggleButton");
+const headerNextButton = document.getElementById("headerNextButton");
 const listenerCardValue = document.getElementById("listenerCardValue");
 const realtimeCardValue = document.getElementById("realtimeCardValue");
 const mediaCardValue = document.getElementById("mediaCardValue");
 const targetsList = document.getElementById("targetsList");
 const satelliteStatus = document.getElementById("satelliteStatus");
-const settingsPanel = document.getElementById("settingsPanel");
 const targetsCountValue = document.getElementById("targetsCountValue");
 const pairCountValue = document.getElementById("pairCountValue");
 const clapGapValue = document.getElementById("clapGapValue");
@@ -846,8 +935,6 @@ const languageValue = document.getElementById("languageValue");
 const workspaceValue = document.getElementById("workspaceValue");
 
 let currentState = null;
-let editorDirty = false;
-let promptDirty = false;
 
 function compactPath(path) {
   if (!path) return "UNKNOWN";
@@ -862,12 +949,8 @@ function setMessage(text, isError = false) {
     : "mt-2 text-sm text-on-surface-variant";
 }
 
-function openSettingsPanel() {
-  settingsPanel.classList.remove("hidden");
-}
-
-function closeSettingsPanel() {
-  settingsPanel.classList.add("hidden");
+function openSettingsPage() {
+  window.open("/settings", "_blank", "noopener");
 }
 
 function setSignalBars(level) {
@@ -957,16 +1040,11 @@ function renderState(state) {
   } else {
     playerPill.textContent = "PLAYER_IDLE";
   }
-
-  if (!promptDirty) {
-    promptInput.value = realtime.welcome_prompt || "";
-  }
-  openaiHint.textContent = state.openai_key_present
-    ? "KEY_STATUS: STORED_IN_ENV"
-    : "KEY_STATUS: MISSING";
-  if (!editorDirty) {
-    configEditor.value = JSON.stringify(state.config, null, 2);
-  }
+  headerPlayerState.textContent = playerPill.textContent;
+  headerToggleButton.textContent = player.playing ? "pause_circle" : "play_circle";
+  headerToggleButton.title = player.playing ? "Pause media" : player.paused ? "Resume media" : "Play media";
+  headerNextButton.classList.toggle("hidden", !player.can_skip);
+  headerNextButton.title = player.can_skip ? "Next track" : "No next track available";
 
   listenerCardValue.textContent = state.listener_running ? "Microphone stream online" : "Listener offline";
   realtimeCardValue.textContent = state.openai_key_present ? "Realtime credentials armed" : "OpenAI key required";
@@ -1010,6 +1088,93 @@ async function post(path, payload = null) {
   return data;
 }
 
+async function callAndRefresh(path, successMessage) {
+  try {
+    await post(path);
+    if (successMessage) {
+      setMessage(successMessage);
+    }
+    setTimeout(fetchState, 180);
+  } catch (error) {
+    setMessage(error.message, true);
+  }
+}
+
+document.getElementById("triggerButton").addEventListener("click", () => callAndRefresh("/trigger", "Trigger replayed."));
+document.getElementById("playButton").addEventListener("click", () => callAndRefresh("/player/toggle", "Player toggled."));
+headerToggleButton.addEventListener("click", () => callAndRefresh("/player/toggle", "Player toggled."));
+headerNextButton.addEventListener("click", () => callAndRefresh("/player/next", "Next track requested."));
+document.getElementById("restartListenerButton").addEventListener("click", () => callAndRefresh("/listener/restart", "Listener restarted."));
+document.getElementById("stopListenerButton").addEventListener("click", () => callAndRefresh("/listener/stop", "Listener stopped."));
+document.getElementById("startListenerButton").addEventListener("click", () => callAndRefresh("/listener/start", "Listener started."));
+document.getElementById("reloadButton").addEventListener("click", openSettingsPage);
+document.getElementById("engageButton").addEventListener("click", () => callAndRefresh("/trigger", "System engaged."));
+document.getElementById("saveButton").addEventListener("click", openSettingsPage);
+document.getElementById("killButton").addEventListener("click", async () => {
+  try {
+    await post("/shutdown");
+    setMessage("Shutting everything down...");
+  } catch (error) {
+    setMessage(error.message, true);
+  }
+});
+
+fetchState().catch((error) => setMessage(error.message, true));
+setInterval(() => {
+  fetchState().catch(() => {});
+}, 2000);
+"""
+
+
+def build_dashboard_settings_js() -> str:
+    return """
+const promptInput = document.getElementById("promptInput");
+const openaiKeyInput = document.getElementById("openaiKeyInput");
+const openaiHint = document.getElementById("openaiHint");
+const configEditor = document.getElementById("configEditor");
+const settingsMeta = document.getElementById("settingsMeta");
+const messageEl = document.getElementById("message");
+
+let editorDirty = false;
+let promptDirty = false;
+
+function setMessage(text, isError = false) {
+  messageEl.textContent = text;
+  messageEl.className = isError ? "mt-2 text-sm text-error" : "mt-2 text-sm text-on-surface-variant";
+}
+
+async function fetchState() {
+  const response = await fetch("/state");
+  const state = await response.json();
+  renderState(state);
+}
+
+function renderState(state) {
+  if (!promptDirty) {
+    promptInput.value = state.config?.realtime?.welcome_prompt || "";
+  }
+  if (!editorDirty) {
+    configEditor.value = JSON.stringify(state.config, null, 2);
+  }
+  openaiHint.textContent = state.openai_key_present
+    ? "KEY_STATUS: STORED_IN_ENV"
+    : "KEY_STATUS: MISSING";
+  settingsMeta.textContent = `Config: ${state.config_path} • Dashboard: ${state.dashboard_url}`;
+}
+
+async function post(path, payload = null) {
+  const response = await fetch(path, {
+    method: "POST",
+    headers: payload ? { "Content-Type": "application/json" } : {},
+    body: payload ? JSON.stringify(payload) : null,
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || `Request failed: ${path}`);
+  }
+  return data;
+}
+
 async function saveConfig() {
   try {
     const config = JSON.parse(configEditor.value);
@@ -1029,65 +1194,20 @@ async function saveConfig() {
   }
 }
 
-async function callAndRefresh(path, successMessage) {
-  try {
-    await post(path);
-    if (successMessage) {
-      setMessage(successMessage);
-    }
-    setTimeout(fetchState, 180);
-  } catch (error) {
-    setMessage(error.message, true);
-  }
-}
-
-document.getElementById("triggerButton").addEventListener("click", () => callAndRefresh("/trigger", "Trigger replayed."));
-document.getElementById("playButton").addEventListener("click", () => callAndRefresh("/player/play", "Media replay requested."));
-document.getElementById("pauseButton").addEventListener("click", () => callAndRefresh("/player/pause", "Music paused."));
-document.getElementById("resumeButton").addEventListener("click", () => callAndRefresh("/player/resume", "Music resumed."));
-document.getElementById("playButtonSecondary").addEventListener("click", () => callAndRefresh("/player/play", "Media replay requested."));
-document.getElementById("pauseButtonSecondary").addEventListener("click", () => callAndRefresh("/player/pause", "Music paused."));
-document.getElementById("resumeButtonSecondary").addEventListener("click", () => callAndRefresh("/player/resume", "Music resumed."));
-document.getElementById("stopMusicButton").addEventListener("click", () => callAndRefresh("/player/stop", "Music stopped."));
-document.getElementById("restartListenerButton").addEventListener("click", () => callAndRefresh("/listener/restart", "Listener restarted."));
-document.getElementById("stopListenerButton").addEventListener("click", () => callAndRefresh("/listener/stop", "Listener stopped."));
-document.getElementById("startListenerButton").addEventListener("click", () => callAndRefresh("/listener/start", "Listener started."));
-document.getElementById("reloadButton").addEventListener("click", () => {
-  openSettingsPanel();
-});
-document.getElementById("panelReloadButton").addEventListener("click", () => {
+document.getElementById("settingsReloadButton").addEventListener("click", async () => {
   editorDirty = false;
   promptDirty = false;
-  fetchState().then(() => setMessage("Config reloaded from disk."));
+  await fetchState();
+  setMessage("Config reloaded from disk.");
 });
-document.getElementById("engageButton").addEventListener("click", () => callAndRefresh("/trigger", "System engaged."));
-document.getElementById("saveButton").addEventListener("click", () => {
-  openSettingsPanel();
-});
-document.getElementById("panelSaveButton").addEventListener("click", saveConfig);
+
+document.getElementById("settingsSaveButton").addEventListener("click", saveConfig);
 configEditor.addEventListener("input", () => {
   editorDirty = true;
 });
 promptInput.addEventListener("input", () => {
   promptDirty = true;
 });
-document.getElementById("closeSettingsButton").addEventListener("click", closeSettingsPanel);
-document.getElementById("killButton").addEventListener("click", async () => {
-  try {
-    await post("/shutdown");
-    setMessage("Shutting everything down...");
-  } catch (error) {
-    setMessage(error.message, true);
-  }
-});
-document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape") {
-    closeSettingsPanel();
-  }
-});
 
 fetchState().catch((error) => setMessage(error.message, true));
-setInterval(() => {
-  fetchState().catch(() => {});
-}, 2000);
 """

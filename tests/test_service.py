@@ -128,6 +128,49 @@ class WakeServiceTests(unittest.TestCase):
         launch_selected_targets_mock.assert_not_called()
         play_media_only_mock.assert_not_called()
 
+    def test_toggle_media_pauses_when_currently_playing(self) -> None:
+        service = WakeService(config=self.build_config(), project_dir=Path("/tmp"))
+        with patch.object(service.player, "state", return_value={"playing": True, "paused": False}):
+            with patch.object(service.player, "pause") as pause_mock:
+                service.toggle_media()
+
+        pause_mock.assert_called_once()
+
+    def test_toggle_media_resumes_when_paused(self) -> None:
+        service = WakeService(config=self.build_config(), project_dir=Path("/tmp"))
+        with patch.object(service.player, "state", return_value={"playing": False, "paused": True}):
+            with patch.object(service.player, "resume") as resume_mock:
+                service.toggle_media()
+
+        resume_mock.assert_called_once()
+
+    @patch("clap_wake.service.list_audio_from_folder", return_value=[Path("/tmp/a.mp3"), Path("/tmp/b.mp3")])
+    def test_player_state_includes_can_skip_for_folder_random(self, list_mock) -> None:
+        del list_mock
+        config = self.build_config()
+        config["media"]["mode"] = "folder_random"
+        config["media"]["selected_folder_path"] = "/tmp"
+        service = WakeService(config=config, project_dir=Path("/tmp"))
+
+        state = service.player_state()
+
+        self.assertTrue(state["can_skip"])
+
+    @patch("clap_wake.service.pick_next_audio_from_folder", return_value=Path("/tmp/b.mp3"))
+    def test_next_media_plays_next_track_when_playlist_available(self, next_mock) -> None:
+        config = self.build_config()
+        config["media"]["mode"] = "folder_random"
+        config["media"]["selected_folder_path"] = "/tmp"
+        service = WakeService(config=config, project_dir=Path("/tmp"))
+
+        with patch.object(service, "can_skip_media", return_value=True):
+            with patch.object(service.player, "state", return_value={"current_path": "/tmp/a.mp3"}):
+                with patch.object(service.player, "play") as play_mock:
+                    service.next_media()
+
+        next_mock.assert_called_once()
+        play_mock.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

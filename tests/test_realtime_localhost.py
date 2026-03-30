@@ -6,7 +6,12 @@ import unittest
 from unittest.mock import patch
 
 from clap_wake.config import DEFAULT_CONFIG
-from clap_wake.realtime_localhost import RealtimeWelcomeServer, build_app_js, mint_ephemeral_token
+from clap_wake.realtime_localhost import (
+    RealtimeWelcomeServer,
+    build_app_js,
+    build_index_html,
+    mint_ephemeral_token,
+)
 
 
 class RealtimeLocalhostTests(unittest.TestCase):
@@ -73,6 +78,15 @@ class RealtimeLocalhostTests(unittest.TestCase):
         self.assertIn('output_modalities: ["audio"]', script)
         self.assertNotIn('output_modalities: ["audio", "text"]', script)
         self.assertNotIn('semantic_vad', script)
+
+    def test_realtime_page_and_script_include_streaming_transcript_and_bounded_log(self) -> None:
+        server = RealtimeWelcomeServer(config=self.build_config(), port=8767)
+        html = build_index_html(server.public_config())
+        script = build_app_js(server)
+
+        self.assertIn('id="liveTranscript"', html)
+        self.assertIn("MAX_LOG_LINES = 160", script)
+        self.assertIn("appendTranscript(event.delta)", script)
 
 
 if __name__ == "__main__":
