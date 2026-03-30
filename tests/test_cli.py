@@ -29,6 +29,22 @@ class CliTests(unittest.TestCase):
         self.assertEqual(rc, 130)
         self.assertEqual(service.stop.call_count, 1)
 
+    def test_stop_returns_zero_when_runtime_is_stopped(self) -> None:
+        with patch("clap_wake.cli.request_runtime_stop", return_value=(True, "Stopped.")):
+            with patch("builtins.print") as print_mock:
+                rc = main(["stop", "--config", str(Path("/tmp/config.json"))])
+
+        self.assertEqual(rc, 0)
+        print_mock.assert_called_once_with("Stopped.")
+
+    def test_stop_returns_one_when_no_runtime_is_found(self) -> None:
+        with patch("clap_wake.cli.request_runtime_stop", return_value=(False, "No running instance found.")):
+            with patch("builtins.print") as print_mock:
+                rc = main(["stop", "--config", str(Path("/tmp/config.json"))])
+
+        self.assertEqual(rc, 1)
+        print_mock.assert_called_once_with("No running instance found.")
+
 
 if __name__ == "__main__":
     unittest.main()

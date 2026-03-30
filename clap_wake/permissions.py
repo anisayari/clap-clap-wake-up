@@ -55,12 +55,15 @@ def probe_microphone_permission(microphone_config: dict[str, Any]) -> Permission
     sample_rate = int(microphone_config.get("sample_rate", 16000))
     blocksize = int(microphone_config.get("blocksize", 512))
     try:
-        with sd.InputStream(
-            samplerate=sample_rate,
-            channels=1,
-            dtype="float32",
-            blocksize=blocksize,
-        ):
+        stream_kwargs = {
+            "samplerate": sample_rate,
+            "channels": 1,
+            "dtype": "float32",
+            "blocksize": blocksize,
+        }
+        if microphone_config.get("input_device") not in {None, ""}:
+            stream_kwargs["device"] = int(microphone_config["input_device"])
+        with sd.InputStream(**stream_kwargs):
             time.sleep(0.12)
         return PermissionResult(
             key="microphone",

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import socket
 import threading
 import time
@@ -14,6 +15,7 @@ from typing import Any
 from .config import DEFAULT_CONFIG, load_config, merge_dict, migrate_config, save_config
 from .env_utils import load_env_value, save_env_value
 from .launcher import open_url_foreground
+from .runtime_control import clear_runtime_state, register_runtime
 from .service import WakeService
 
 LOGGER = logging.getLogger("clap_wake.dashboard")
@@ -304,6 +306,7 @@ class DashboardRuntime:
 def run_dashboard(config_path: Path, open_browser: bool = True) -> int:
     runtime = DashboardRuntime(config_path=config_path)
     url = runtime.start()
+    register_runtime("dashboard", config_path=config_path, pid=os.getpid(), dashboard_url=url)
     LOGGER.info("Dashboard started on %s", url)
     if open_browser:
         open_url_foreground(url)
@@ -311,6 +314,8 @@ def run_dashboard(config_path: Path, open_browser: bool = True) -> int:
         runtime.wait()
     except KeyboardInterrupt:
         runtime.shutdown()
+    finally:
+        clear_runtime_state(expected_pid=os.getpid())
     return 0
 
 
@@ -395,6 +400,9 @@ def build_dashboard_html() -> str:
               "background": "#0a0e14",
               "secondary-dim": "#dc3300"
             },
+            fontSize: {
+              "2xs": ["0.625rem", { lineHeight: "1rem" }],
+            },
             fontFamily: {
               "headline": ["Space Grotesk"],
               "body": ["Inter"],
@@ -410,7 +418,7 @@ def build_dashboard_html() -> str:
             clip-path: polygon(10% 0, 90% 0, 100% 15%, 100% 85%, 90% 100%, 10% 100%, 0 85%, 0 15%);
         }
         .clip-path-chamfer-lg {
-            clip-path: polygon(0 0, 95% 0, 100% 5%, 100% 100%, 5% 100%, 0 95%);
+            clip-path: polygon(0 0, 97% 0, 100% 3%, 100% 100%, 3% 100%, 0 97%);
         }
         .grid-bg {
             background-image:
@@ -429,16 +437,23 @@ def build_dashboard_html() -> str:
         .animate-pulse-ring {
             animation: pulse-ring 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
         }
+        .radial-vignette {
+            background: radial-gradient(ellipse at center, rgba(129,236,255,0.05) 0%, transparent 70%);
+        }
+        .radial-glow {
+            background: radial-gradient(circle, rgba(129,236,255,0.20) 0%, transparent 70%);
+        }
         .hud-input {
             background: rgba(15, 20, 26, 0.75);
-            border: 1px solid rgba(129,236,255,0.18);
+            border: none;
+            border-bottom: 1px solid rgba(68,72,79,0.30);
             color: #f1f3fc;
             font-family: Inter, sans-serif;
         }
         .hud-input:focus {
             outline: none;
-            border-color: rgba(129,236,255,0.6);
-            box-shadow: 0 0 0 1px rgba(129,236,255,0.2), 0 0 24px rgba(129,236,255,0.12);
+            border-bottom-color: rgba(129,236,255,0.7);
+            box-shadow: 0 2px 12px rgba(129,236,255,0.12);
         }
         .hud-scroll::-webkit-scrollbar {
             width: 8px;
@@ -452,54 +467,54 @@ def build_dashboard_html() -> str:
                 linear-gradient(180deg, rgba(129,236,255,0.10), rgba(129,236,255,0.00) 24%),
                 rgba(15, 20, 26, 0.72);
             backdrop-filter: blur(18px);
-            border: 1px solid rgba(129,236,255,0.14);
+            border: 1px solid rgba(68,72,79,0.22);
         }
         .hud-panel-soft {
             background:
                 linear-gradient(180deg, rgba(129,236,255,0.06), rgba(129,236,255,0.00) 22%),
                 rgba(15, 20, 26, 0.58);
             backdrop-filter: blur(16px);
-            border: 1px solid rgba(129,236,255,0.10);
+            border: 1px solid rgba(68,72,79,0.18);
         }
         .hud-chip {
             background: rgba(129,236,255,0.08);
-            border: 1px solid rgba(129,236,255,0.12);
+            border: 1px solid rgba(68,72,79,0.20);
         }
         .hud-action {
             background: linear-gradient(180deg, rgba(129,236,255,0.16), rgba(129,236,255,0.04));
-            border: 1px solid rgba(129,236,255,0.18);
+            border: 1px solid rgba(68,72,79,0.24);
         }
     </style>
 </head>
 <body class="bg-background text-on-background font-body selection:bg-primary/30 overflow-hidden min-h-screen">
 <div class="fixed inset-0 grid-bg pointer-events-none"></div>
 <div class="fixed inset-0 scanline pointer-events-none"></div>
-<div class="fixed inset-0 bg-radial-gradient from-primary/5 via-transparent to-transparent pointer-events-none"></div>
+<div class="fixed inset-0 radial-vignette pointer-events-none"></div>
 
-<header class="fixed top-0 w-full z-50 h-16 px-6 bg-[#0a0e14]/82 backdrop-blur-xl border-b border-cyan-500/18 shadow-[0_0_18px_rgba(129,236,255,0.12)]">
-<div class="h-full flex items-center justify-between gap-6">
+<header class="fixed top-0 w-full z-50 h-14 px-5 bg-[#0a0e14]/82 backdrop-blur-xl shadow-[0_0_18px_rgba(129,236,255,0.12)]">
+<div class="h-full flex items-center justify-between gap-4">
 <div class="flex items-center gap-4 min-w-0">
-<div class="w-10 h-10 flex items-center justify-center border border-primary/20 bg-primary/5">
-<span class="material-symbols-outlined text-primary">graphic_eq</span>
+<div class="w-8 h-8 flex items-center justify-center border border-primary/20 bg-primary/5">
+<span class="material-symbols-outlined text-primary text-lg">graphic_eq</span>
 </div>
 <div class="min-w-0">
 <div class="flex items-center gap-3 flex-wrap">
-<span class="text-cyan-400 font-bold tracking-[0.26em] font-headline text-sm">CLAP WAKE UP</span>
-<span class="text-[10px] text-primary/60 tracking-[0.18em] font-label">DOUBLE_CLAP_CONTROL_PANEL</span>
+<span class="text-cyan-400 font-bold tracking-widest font-headline text-sm">CLAP WAKE UP</span>
+<span class="text-2xs text-primary/60 tracking-widest font-label">DOUBLE_CLAP_CONTROL_PANEL</span>
 </div>
-<p class="text-[11px] text-on-surface-variant truncate">Audio-triggered launcher, local media player, and realtime welcome assistant.</p>
+<p class="text-xs text-on-surface-variant truncate">Audio-triggered launcher, local media player, and realtime welcome assistant.</p>
 </div>
 </div>
 <div class="flex items-center gap-3 text-primary">
 <div class="hidden xl:flex items-center gap-2">
-<div class="hud-chip px-3 py-2 flex items-center gap-2 text-[10px] font-headline tracking-[0.18em] max-w-[18rem]">
-<span class="material-symbols-outlined text-[16px]">music_note</span>
+<div class="hud-chip px-2 py-1 flex items-center gap-2 text-2xs font-headline tracking-widest max-w-[18rem]">
+<span class="material-symbols-outlined text-base">music_note</span>
 <span id="headerPlayerState" class="truncate">PLAYER_IDLE</span>
 </div>
 <button id="headerToggleButton" class="material-symbols-outlined text-xl hover:text-cyan-300 transition-colors" title="Play or pause media">play_circle</button>
 <button id="headerNextButton" class="material-symbols-outlined text-xl hover:text-cyan-300 transition-colors hidden" title="Next track">skip_next</button>
 </div>
-<div class="hud-chip px-3 py-2 flex items-center gap-2 text-[10px] font-headline tracking-[0.18em]">
+<div class="hud-chip px-2 py-1 flex items-center gap-2 text-2xs font-headline tracking-widest">
 <span class="w-2 h-2 rounded-full bg-primary shadow-[0_0_8px_rgba(129,236,255,0.7)]"></span>
 <span id="headerStatus">LISTENER_BOOTING</span>
 </div>
@@ -509,67 +524,67 @@ def build_dashboard_html() -> str:
 </div>
 </header>
 
-<aside class="fixed left-0 top-16 h-[calc(100vh-64px)] z-40 bg-[#0a0e14]/40 backdrop-blur-md w-24 border-r border-cyan-500/10 px-3 py-6">
-<div class="flex flex-col items-center gap-2 mb-8">
-<div class="w-12 h-12 flex items-center justify-center border border-primary/20 bg-primary/5">
+<aside class="hidden md:flex md:flex-col fixed left-0 top-14 h-[calc(100vh-3.5rem)] z-40 bg-[#0a0e14]/40 backdrop-blur-md w-20 px-2 py-4">
+<div class="flex flex-col items-center gap-2 mb-4">
+<div class="w-9 h-9 flex items-center justify-center border border-primary/20 bg-primary/5">
 <span class="material-symbols-outlined text-primary" style="font-variation-settings: 'FILL' 1;">neurology</span>
 </div>
-<span class="text-cyan-500 font-black text-[10px] font-headline tracking-[0.16em] text-center">WAKE_CORE</span>
+<span class="text-cyan-500 font-black text-2xs font-headline tracking-widest text-center">WAKE_CORE</span>
 </div>
-<div class="flex flex-col w-full gap-4">
-<button id="startListenerButton" class="w-full flex flex-col items-center py-4 text-cyan-400 bg-cyan-500/20 border-l-4 border-cyan-400 transition-transform">
+<div class="flex flex-col w-full gap-2">
+<button id="startListenerButton" class="w-full flex flex-col items-center py-3 text-cyan-400 bg-cyan-500/20 border-l border-cyan-400/60 transition-transform">
 <span class="material-symbols-outlined mb-1">rocket_launch</span>
-<span class="font-['Space_Grotesk'] uppercase text-[10px] tracking-tighter">LISTEN</span>
+<span class="font-headline uppercase text-2xs tracking-widest">LISTEN</span>
 </button>
-<button id="restartListenerButton" class="w-full flex flex-col items-center py-4 text-cyan-900/60 hover:bg-cyan-500/5 hover:text-cyan-200 transition-all">
+<button id="restartListenerButton" class="w-full flex flex-col items-center py-3 text-cyan-900/60 hover:bg-cyan-500/5 hover:text-cyan-200 transition-all">
 <span class="material-symbols-outlined mb-1">ads_click</span>
-<span class="font-['Space_Grotesk'] uppercase text-[10px] tracking-tighter">RELOAD</span>
+<span class="font-headline uppercase text-2xs tracking-widest">RELOAD</span>
 </button>
-<button id="playButton" class="w-full flex flex-col items-center py-4 text-cyan-900/60 hover:bg-cyan-500/5 hover:text-cyan-200 transition-all">
+<button id="playButton" class="w-full flex flex-col items-center py-3 text-cyan-900/60 hover:bg-cyan-500/5 hover:text-cyan-200 transition-all">
 <span class="material-symbols-outlined mb-1">sensors</span>
-<span class="font-['Space_Grotesk'] uppercase text-[10px] tracking-tighter">PLAY</span>
+<span class="font-headline uppercase text-2xs tracking-widest">PLAY</span>
 </button>
-<button id="saveButton" class="w-full flex flex-col items-center py-4 text-cyan-900/60 hover:bg-cyan-500/5 hover:text-cyan-200 transition-all">
+<button id="saveButton" class="w-full flex flex-col items-center py-3 text-cyan-900/60 hover:bg-cyan-500/5 hover:text-cyan-200 transition-all">
 <span class="material-symbols-outlined mb-1">memory</span>
-<span class="font-['Space_Grotesk'] uppercase text-[10px] tracking-tighter">CONFIG</span>
+<span class="font-headline uppercase text-2xs tracking-widest">CONFIG</span>
 </button>
-<button id="stopListenerButton" class="w-full flex flex-col items-center py-4 text-cyan-900/60 hover:bg-cyan-500/5 hover:text-cyan-200 transition-all">
+<button id="stopListenerButton" class="w-full flex flex-col items-center py-3 text-cyan-900/60 hover:bg-cyan-500/5 hover:text-cyan-200 transition-all">
 <span class="material-symbols-outlined mb-1">explore</span>
-<span class="font-['Space_Grotesk'] uppercase text-[10px] tracking-tighter">STOP</span>
+<span class="font-headline uppercase text-2xs tracking-widest">STOP</span>
 </button>
 </div>
 <button id="killButton" class="mt-auto flex flex-col items-center text-error hover:text-error-dim transition-colors group">
 <span class="material-symbols-outlined mb-1">cancel</span>
-<span class="font-['Space_Grotesk'] uppercase text-[10px] tracking-tighter">KILL</span>
+<span class="font-headline uppercase text-2xs tracking-widest">KILL</span>
 </button>
 </aside>
 
-<main class="ml-24 mt-16 min-h-[calc(100vh-64px)] p-6 md:p-8">
-<div class="max-w-[1600px] mx-auto flex flex-col gap-6">
+<main class="md:ml-20 mt-14 min-h-[calc(100vh-3.5rem)] p-4 md:p-6">
+<div class="max-w-[1600px] mx-auto flex flex-col gap-4">
 <section class="grid grid-cols-1 xl:grid-cols-[1.15fr_0.85fr] gap-4 items-stretch">
-<div class="hud-panel clip-path-chamfer-lg p-5 md:p-6 relative overflow-hidden min-h-[24rem]">
+<div class="hud-panel clip-path-chamfer-lg p-4 relative overflow-hidden min-h-[18rem]">
 <div class="absolute inset-0 pointer-events-none opacity-50">
 <div class="absolute -top-12 left-10 w-48 h-48 rounded-full bg-primary/10 blur-3xl"></div>
 <div class="absolute bottom-10 right-8 w-56 h-56 rounded-full bg-secondary/8 blur-3xl"></div>
 </div>
-<div class="relative h-full flex flex-col justify-between gap-6">
-<div class="flex flex-col md:flex-row md:items-start md:justify-between gap-6">
+<div class="relative h-full flex flex-col justify-between gap-4">
+<div class="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
 <div class="max-w-lg">
-<p class="text-[11px] font-label tracking-[0.22em] text-primary/70 mb-3">WAKE_ENGINE / LIVE OVERVIEW</p>
-<h1 class="text-3xl md:text-4xl font-headline font-semibold tracking-[0.08em] text-on-background">Double clap, then launch everything.</h1>
-<p class="mt-3 text-sm text-on-surface-variant leading-6">Compact control panel for the microphone listener, clap profile, selected targets, local media, and the OpenAI realtime wake flow.</p>
-<div class="mt-5 flex flex-wrap gap-3">
-<div class="hud-chip px-3 py-2">
-<span class="text-[10px] font-label tracking-[0.18em] text-primary/60">ASSISTANT</span>
-<p id="assistantNameDisplay" class="text-sm font-headline tracking-[0.18em] text-primary mt-1">JARVIS</p>
+<p class="text-xs font-label tracking-widest text-primary/70 mb-1.5">WAKE_ENGINE / LIVE OVERVIEW</p>
+<h1 class="text-2xl md:text-3xl font-headline font-semibold tracking-wide text-on-background">Double clap, then launch everything.</h1>
+<p class="mt-2 text-sm text-on-surface-variant leading-relaxed">Compact control panel for the microphone listener, clap profile, selected targets, local media, and the OpenAI realtime wake flow.</p>
+<div class="mt-3 flex flex-wrap gap-2">
+<div class="hud-chip px-2 py-1">
+<span class="text-2xs font-label tracking-widest text-primary/60">ASSISTANT</span>
+<p id="assistantNameDisplay" class="text-sm font-headline tracking-widest text-primary mt-1">JARVIS</p>
 </div>
-<div class="hud-chip px-3 py-2">
-<span class="text-[10px] font-label tracking-[0.18em] text-primary/60">LISTENER</span>
-<p id="statusPill" class="text-sm font-headline tracking-[0.18em] text-on-background mt-1">LISTENER_BOOTING</p>
+<div class="hud-chip px-2 py-1">
+<span class="text-2xs font-label tracking-widest text-primary/60">LISTENER</span>
+<p id="statusPill" class="text-sm font-headline tracking-widest text-on-background mt-1">LISTENER_BOOTING</p>
 </div>
-<div class="hud-chip px-3 py-2">
-<span class="text-[10px] font-label tracking-[0.18em] text-primary/60">PLAYER</span>
-<p id="playerPill" class="text-sm font-headline tracking-[0.18em] text-on-background mt-1">PLAYER_IDLE</p>
+<div class="hud-chip px-2 py-1">
+<span class="text-2xs font-label tracking-widest text-primary/60">PLAYER</span>
+<p id="playerPill" class="text-sm font-headline tracking-widest text-on-background mt-1">PLAYER_IDLE</p>
 </div>
 </div>
 </div>
@@ -579,10 +594,10 @@ def build_dashboard_html() -> str:
 <div class="absolute w-[16rem] h-[16rem] border-t-2 border-b-2 border-primary/25 rounded-full animate-[spin_12s_linear_infinite]"></div>
 <div class="absolute w-[13rem] h-[13rem] border-l border-r border-secondary/20 rounded-full animate-[spin_18s_linear_infinite_reverse]"></div>
 <div class="w-40 h-40 rounded-full border border-primary/40 bg-gradient-to-br from-primary/28 via-surface-container to-surface-container-lowest backdrop-blur-xl shadow-[0_0_70px_rgba(129,236,255,0.18)] flex flex-col items-center justify-center relative overflow-hidden">
-<div class="absolute inset-0 bg-radial-gradient from-primary/20 via-transparent to-transparent animate-pulse"></div>
-<span class="material-symbols-outlined text-6xl text-primary drop-shadow-[0_0_12px_rgba(129,236,255,0.7)]" style="font-variation-settings: 'FILL' 1;">neurology</span>
-<p class="mt-3 text-[11px] font-label tracking-[0.28em] text-primary/70">REALTIME_CORE</p>
-<div class="mt-3 flex gap-1">
+<div class="absolute inset-0 radial-glow animate-pulse"></div>
+<span class="material-symbols-outlined text-5xl text-primary drop-shadow-[0_0_12px_rgba(129,236,255,0.7)]" style="font-variation-settings: 'FILL' 1;">neurology</span>
+<p class="mt-2 text-xs font-label tracking-widest text-primary/70">REALTIME_CORE</p>
+<div class="mt-2 flex gap-1">
 <div class="w-1 h-4 bg-primary animate-[bounce_1s_infinite]"></div>
 <div class="w-1 h-6 bg-primary animate-[bounce_1.1s_infinite]"></div>
 <div class="w-1 h-3 bg-primary animate-[bounce_0.85s_infinite]"></div>
@@ -593,143 +608,143 @@ def build_dashboard_html() -> str:
 </div>
 </div>
 <div class="grid grid-cols-1 gap-3">
-<button id="engageButton" class="hud-action clip-path-chamfer-lg px-4 py-4 text-left hover:bg-primary/10 transition-colors">
-<p class="text-[10px] font-label tracking-[0.2em] text-primary/60">DOUBLE_CLAP_TEST</p>
-<p class="mt-2 text-sm font-headline tracking-[0.16em] text-on-background">Replay full trigger</p>
-<p class="mt-1 text-[11px] text-on-surface-variant">Relaunch targets and replay media now.</p>
+<button id="engageButton" class="hud-action clip-path-chamfer-lg px-3 py-2.5 text-left hover:bg-primary/10 transition-colors">
+<p class="text-2xs font-label tracking-widest text-primary/60">DOUBLE_CLAP_TEST</p>
+<p class="mt-2 text-sm font-headline tracking-widest text-on-background">Replay full trigger</p>
+<p class="mt-1 text-xs text-on-surface-variant">Relaunch targets and replay media now.</p>
 </button>
 </div>
 </div>
 </div>
 
 <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-<div class="hud-panel-soft clip-path-chamfer-lg p-5">
+<div class="hud-panel-soft clip-path-chamfer-lg p-4">
 <div class="flex items-start justify-between gap-4">
 <div>
-<p class="text-[10px] font-label tracking-[0.2em] text-primary/60">MICROPHONE</p>
-<h2 class="mt-2 text-lg font-headline tracking-[0.12em] text-on-background">Listener status</h2>
+<p class="text-2xs font-label tracking-widest text-primary/60">MICROPHONE</p>
+<h2 class="mt-1.5 text-base font-headline tracking-wide text-on-background">Listener status</h2>
 <p id="listenerCardValue" class="mt-2 text-sm text-on-surface-variant">Listener standing by</p>
 </div>
-<span class="material-symbols-outlined text-primary/70 text-3xl">mic</span>
+<span class="material-symbols-outlined text-primary/70 text-2xl">mic</span>
 </div>
 </div>
-<div class="hud-panel-soft clip-path-chamfer-lg p-5">
+<div class="hud-panel-soft clip-path-chamfer-lg p-4">
 <div class="flex items-start justify-between gap-4">
 <div>
-<p class="text-[10px] font-label tracking-[0.2em] text-primary/60">OPENAI REALTIME</p>
-<h2 class="mt-2 text-lg font-headline tracking-[0.12em] text-on-background">Assistant link</h2>
+<p class="text-2xs font-label tracking-widest text-primary/60">OPENAI REALTIME</p>
+<h2 class="mt-1.5 text-base font-headline tracking-wide text-on-background">Assistant link</h2>
 <p id="realtimeCardValue" class="mt-2 text-sm text-on-surface-variant">Realtime link idle</p>
 </div>
-<span class="material-symbols-outlined text-primary/70 text-3xl">hub</span>
+<span class="material-symbols-outlined text-primary/70 text-2xl">hub</span>
 </div>
 </div>
-<div class="hud-panel-soft clip-path-chamfer-lg p-5">
+<div class="hud-panel-soft clip-path-chamfer-lg p-4">
 <div class="flex items-start justify-between gap-4">
 <div>
-<p class="text-[10px] font-label tracking-[0.2em] text-primary/60">MEDIA ROUTER</p>
-<h2 class="mt-2 text-lg font-headline tracking-[0.12em] text-on-background">Current playback</h2>
+<p class="text-2xs font-label tracking-widest text-primary/60">MEDIA ROUTER</p>
+<h2 class="mt-1.5 text-base font-headline tracking-wide text-on-background">Current playback</h2>
 <p id="mediaCardValue" class="mt-2 text-sm text-on-surface-variant">Media bus calm</p>
 </div>
-<span class="material-symbols-outlined text-primary/70 text-3xl">music_note</span>
+<span class="material-symbols-outlined text-primary/70 text-2xl">music_note</span>
 </div>
 </div>
-<div class="hud-panel-soft clip-path-chamfer-lg p-5">
+<div class="hud-panel-soft clip-path-chamfer-lg p-4">
 <div class="flex items-start justify-between gap-4">
 <div>
-<p class="text-[10px] font-label tracking-[0.2em] text-primary/60">LAST EVENT</p>
-<h2 class="mt-2 text-lg font-headline tracking-[0.12em] text-on-background">System message</h2>
+<p class="text-2xs font-label tracking-widest text-primary/60">LAST EVENT</p>
+<h2 class="mt-1.5 text-base font-headline tracking-wide text-on-background">System message</h2>
 <p id="message" class="mt-2 text-sm text-on-surface-variant">No pending system event.</p>
 </div>
-<span class="material-symbols-outlined text-error/70 text-3xl">notification_important</span>
+<span class="material-symbols-outlined text-error/70 text-2xl">notification_important</span>
 </div>
 </div>
 </section>
 
-<section class="grid grid-cols-1 lg:grid-cols-[1.15fr_0.78fr_0.78fr] gap-4">
-<div class="hud-panel clip-path-chamfer-lg p-5">
-<div class="flex items-center justify-between gap-4 mb-5">
+<section class="grid grid-cols-1 lg:grid-cols-[1.15fr_0.78fr_0.78fr] gap-3">
+<div class="hud-panel clip-path-chamfer-lg p-4">
+<div class="flex items-center justify-between gap-4 mb-3">
 <div>
-<p class="text-[10px] font-label tracking-[0.2em] text-primary/60">OPEN_TARGETS</p>
-<h2 class="mt-1 text-xl font-headline tracking-[0.12em] text-on-background">Launch plan</h2>
+<p class="text-2xs font-label tracking-widest text-primary/60">OPEN_TARGETS</p>
+<h2 class="mt-1.5 text-base font-headline tracking-wide text-on-background">Launch plan</h2>
 </div>
-<div class="hud-chip px-3 py-2">
-<span class="text-[10px] font-label tracking-[0.18em] text-primary/60">COUNT</span>
+<div class="hud-chip px-2 py-1">
+<span class="text-2xs font-label tracking-widest text-primary/60">COUNT</span>
 <p id="targetsCountValue" class="text-sm font-headline text-primary mt-1">0</p>
 </div>
 </div>
 <div id="targetsList" class="space-y-3"></div>
 </div>
 
-<div class="hud-panel clip-path-chamfer-lg p-5">
-<div class="flex items-center justify-between gap-4 mb-5">
+<div class="hud-panel clip-path-chamfer-lg p-4">
+<div class="flex items-center justify-between gap-4 mb-3">
 <div>
-<p class="text-[10px] font-label tracking-[0.2em] text-primary/60">DOUBLE_CLAP_PROFILE</p>
-<h2 class="mt-1 text-xl font-headline tracking-[0.12em] text-on-background">Calibration</h2>
+<p class="text-2xs font-label tracking-widest text-primary/60">DOUBLE_CLAP_PROFILE</p>
+<h2 class="mt-1.5 text-base font-headline tracking-wide text-on-background">Calibration</h2>
 </div>
-<span class="material-symbols-outlined text-primary/70 text-3xl">graphic_eq</span>
+<span class="material-symbols-outlined text-primary/70 text-2xl">graphic_eq</span>
 </div>
-<div class="space-y-4">
+<div class="space-y-3">
 <div>
-<p class="text-[10px] font-label tracking-[0.18em] text-primary/60">PAIR_COUNT</p>
-<p id="pairCountValue" class="mt-1 text-lg font-headline tracking-[0.14em] text-on-background">0</p>
-</div>
-<div>
-<p class="text-[10px] font-label tracking-[0.18em] text-primary/60">AVG_GAP</p>
-<p id="clapGapValue" class="mt-1 text-lg font-headline tracking-[0.14em] text-on-background">0.00s</p>
+<p class="text-2xs font-label tracking-widest text-primary/60">PAIR_COUNT</p>
+<p id="pairCountValue" class="mt-1 text-base font-headline tracking-wider text-on-background">0</p>
 </div>
 <div>
-<p class="text-[10px] font-label tracking-[0.18em] text-primary/60">AVG_SCORE</p>
-<p id="clapScoreValue" class="mt-1 text-lg font-headline tracking-[0.14em] text-on-background">0.00</p>
+<p class="text-2xs font-label tracking-widest text-primary/60">AVG_GAP</p>
+<p id="clapGapValue" class="mt-1 text-base font-headline tracking-wider text-on-background">0.00s</p>
 </div>
 <div>
-<p class="text-[10px] font-label tracking-[0.18em] text-primary/60">MATCH_TOLERANCE</p>
-<p id="clapToleranceValue" class="mt-1 text-lg font-headline tracking-[0.14em] text-on-background">0.00</p>
+<p class="text-2xs font-label tracking-widest text-primary/60">AVG_SCORE</p>
+<p id="clapScoreValue" class="mt-1 text-base font-headline tracking-wider text-on-background">0.00</p>
+</div>
+<div>
+<p class="text-2xs font-label tracking-widest text-primary/60">MATCH_TOLERANCE</p>
+<p id="clapToleranceValue" class="mt-1 text-base font-headline tracking-wider text-on-background">0.00</p>
 </div>
 </div>
 </div>
 
-<div class="hud-panel clip-path-chamfer-lg p-5">
-<div class="flex items-center justify-between gap-4 mb-5">
+<div class="hud-panel clip-path-chamfer-lg p-4">
+<div class="flex items-center justify-between gap-4 mb-3">
 <div>
-<p class="text-[10px] font-label tracking-[0.2em] text-primary/60">MEDIA_AND_AI</p>
-<h2 class="mt-1 text-xl font-headline tracking-[0.12em] text-on-background">Runtime sources</h2>
+<p class="text-2xs font-label tracking-widest text-primary/60">MEDIA_AND_AI</p>
+<h2 class="mt-1.5 text-base font-headline tracking-wide text-on-background">Runtime sources</h2>
 </div>
-<span class="material-symbols-outlined text-primary/70 text-3xl">tune</span>
+<span class="material-symbols-outlined text-primary/70 text-2xl">tune</span>
 </div>
-<div class="space-y-4">
+<div class="space-y-3">
 <div>
-<p class="text-[10px] font-label tracking-[0.18em] text-primary/60">MEDIA_MODE</p>
-<p id="mediaModeValue" class="mt-1 text-sm font-headline tracking-[0.14em] text-on-background">single_file</p>
+<p class="text-2xs font-label tracking-widest text-primary/60">MEDIA_MODE</p>
+<p id="mediaModeValue" class="mt-1 text-sm font-headline tracking-wider text-on-background">single_file</p>
 </div>
 <div>
-<p class="text-[10px] font-label tracking-[0.18em] text-primary/60">MEDIA_SOURCE</p>
+<p class="text-2xs font-label tracking-widest text-primary/60">MEDIA_SOURCE</p>
 <p id="mediaSourceValue" class="mt-1 text-sm text-on-surface-variant break-all">unknown</p>
 </div>
 <div>
-<p class="text-[10px] font-label tracking-[0.18em] text-primary/60">VOICE</p>
-<p id="voiceValue" class="mt-1 text-sm font-headline tracking-[0.14em] text-on-background">marin</p>
+<p class="text-2xs font-label tracking-widest text-primary/60">VOICE</p>
+<p id="voiceValue" class="mt-1 text-sm font-headline tracking-wider text-on-background">marin</p>
 </div>
 <div>
-<p class="text-[10px] font-label tracking-[0.18em] text-primary/60">LANGUAGE</p>
-<p id="languageValue" class="mt-1 text-sm font-headline tracking-[0.14em] text-on-background">fr</p>
+<p class="text-2xs font-label tracking-widest text-primary/60">LANGUAGE</p>
+<p id="languageValue" class="mt-1 text-sm font-headline tracking-wider text-on-background">fr</p>
 </div>
 <div>
-<p class="text-[10px] font-label tracking-[0.18em] text-primary/60">WORKSPACE</p>
+<p class="text-2xs font-label tracking-widest text-primary/60">WORKSPACE</p>
 <p id="workspaceValue" class="mt-1 text-sm text-on-surface-variant break-all">unknown</p>
 </div>
 </div>
 </div>
 </section>
 
-<section class="grid grid-cols-1 gap-4">
-<div class="hud-panel clip-path-chamfer-lg p-5">
-<div class="flex items-center justify-between gap-4 mb-5">
+<section class="grid grid-cols-1 gap-3">
+<div class="hud-panel clip-path-chamfer-lg p-4">
+<div class="flex items-center justify-between gap-4 mb-3">
 <div>
-<p class="text-[10px] font-label tracking-[0.2em] text-primary/60">SYSTEM_PATHS</p>
-<h2 class="mt-1 text-xl font-headline tracking-[0.12em] text-on-background">Runtime metadata</h2>
+<p class="text-2xs font-label tracking-widest text-primary/60">SYSTEM_PATHS</p>
+<h2 class="mt-1.5 text-base font-headline tracking-wide text-on-background">Runtime metadata</h2>
 </div>
 <div class="flex flex-col items-end gap-3">
-<span id="satelliteStatus" class="text-[10px] font-headline tracking-[0.18em] text-primary">ENCRYPTED_99%</span>
+<span id="satelliteStatus" class="text-2xs font-headline tracking-widest text-primary">ENCRYPTED_99%</span>
 <div class="flex items-end gap-1">
 <div id="signalBar1" class="w-1 bg-primary h-2"></div>
 <div id="signalBar2" class="w-1 bg-primary h-4"></div>
@@ -739,28 +754,28 @@ def build_dashboard_html() -> str:
 </div>
 </div>
 </div>
-<div class="space-y-4">
+<div class="space-y-3">
 <div>
-<p class="text-[10px] font-label tracking-[0.18em] text-primary/60">LISTENER_META</p>
-<p id="listenerMeta" class="mt-1 text-sm font-headline tracking-[0.14em] text-on-background">LISTENER: ONLINE</p>
+<p class="text-2xs font-label tracking-widest text-primary/60">LISTENER_META</p>
+<p id="listenerMeta" class="mt-1 text-sm font-headline tracking-wider text-on-background">LISTENER: ONLINE</p>
 </div>
 <div>
-<p class="text-[10px] font-label tracking-[0.18em] text-primary/60">CONFIG_PATH</p>
+<p class="text-2xs font-label tracking-widest text-primary/60">CONFIG_PATH</p>
 <p id="configPathMeta" class="mt-1 text-sm text-on-surface-variant break-all">CONFIG: /UNKNOWN</p>
 </div>
 <div>
-<p class="text-[10px] font-label tracking-[0.18em] text-primary/60">DASHBOARD_URL</p>
+<p class="text-2xs font-label tracking-widest text-primary/60">DASHBOARD_URL</p>
 <p id="dashboardUrlMeta" class="mt-1 text-sm text-on-surface-variant break-all">URL: LOCALHOST</p>
 </div>
 <div>
-<p class="text-[10px] font-label tracking-[0.18em] text-primary/60">OPENAI_LINK</p>
+<p class="text-2xs font-label tracking-widest text-primary/60">OPENAI_LINK</p>
 <div id="keyMeta" class="mt-1 text-sm font-headline text-primary/70 flex items-center gap-2">
 <span class="w-2 h-2 rounded-full bg-tertiary shadow-[0_0_5px_#c2ff99]"></span>
 <span>OPENAI_LINK: UNKNOWN</span>
 </div>
 </div>
 <div>
-<p class="text-[10px] font-label tracking-[0.18em] text-primary/60">KEY_STATUS</p>
+<p class="text-2xs font-label tracking-widest text-primary/60">KEY_STATUS</p>
 <p id="openaiHint" class="mt-1 text-sm text-on-surface-variant leading-relaxed">KEY_STATUS: UNKNOWN</p>
 </div>
 </div>
@@ -795,30 +810,39 @@ tailwind.config = {
     extend: {
       colors: {
         primary: "#81ecff",
+        "primary-dim": "#00d4ec",
+        secondary: "#ff7350",
+        tertiary: "#c2ff99",
         background: "#0a0e14",
+        surface: "#0a0e14",
+        "surface-bright": "#262c36",
         "surface-container": "#151a21",
         "surface-container-low": "#0f141a",
         "surface-container-high": "#1b2028",
         "surface-variant": "#20262f",
         "on-background": "#f1f3fc",
+        "on-surface": "#f1f3fc",
         "on-surface-variant": "#a8abb3",
-        error: "#ff716c"
+        "on-primary": "#005762",
+        "on-secondary": "#440900",
+        "outline-variant": "#44484f",
+        error: "#ff716c",
+        "error-dim": "#d7383b"
+      },
+      fontSize: {
+        "2xs": ["0.625rem", { lineHeight: "1rem" }]
       },
       fontFamily: {
         headline: ["Space Grotesk"],
         body: ["Inter"],
         label: ["Space Grotesk"]
-      }
+      },
+      borderRadius: {"DEFAULT": "0px", "lg": "0px", "xl": "0px", "full": "9999px"}
     }
   }
 }
 </script>
 <style>
-body {
-  background: #0a0e14;
-  color: #f1f3fc;
-  font-family: Inter, sans-serif;
-}
 .grid-bg {
   background-image:
     linear-gradient(to right, rgba(129, 236, 255, 0.05) 1px, transparent 1px),
@@ -834,20 +858,21 @@ body {
     linear-gradient(180deg, rgba(129,236,255,0.10), rgba(129,236,255,0.00) 24%),
     rgba(15, 20, 26, 0.72);
   backdrop-filter: blur(18px);
-  border: 1px solid rgba(129,236,255,0.14);
+  border: 1px solid rgba(68,72,79,0.22);
 }
 .hud-input {
   background: rgba(15, 20, 26, 0.75);
-  border: 1px solid rgba(129,236,255,0.18);
+  border: none;
+  border-bottom: 1px solid rgba(68,72,79,0.30);
   color: #f1f3fc;
 }
 .hud-input:focus {
   outline: none;
-  border-color: rgba(129,236,255,0.6);
-  box-shadow: 0 0 0 1px rgba(129,236,255,0.2), 0 0 24px rgba(129,236,255,0.12);
+  border-bottom-color: rgba(129,236,255,0.7);
+  box-shadow: 0 2px 12px rgba(129,236,255,0.12);
 }
 .clip-path-chamfer-lg {
-  clip-path: polygon(0 0, 95% 0, 100% 5%, 100% 100%, 5% 100%, 0 95%);
+  clip-path: polygon(0 0, 97% 0, 100% 3%, 100% 100%, 3% 100%, 0 97%);
 }
 .hud-scroll::-webkit-scrollbar {
   width: 8px;
@@ -857,44 +882,44 @@ body {
 }
 </style>
 </head>
-<body class="min-h-screen overflow-hidden">
+<body class="bg-background text-on-background font-body min-h-screen overflow-x-hidden">
 <div class="fixed inset-0 grid-bg pointer-events-none"></div>
 <div class="fixed inset-0 scanline pointer-events-none"></div>
-<main class="relative min-h-screen p-6 md:p-8">
-  <div class="max-w-[1200px] mx-auto flex flex-col gap-5">
-    <header class="hud-panel clip-path-chamfer-lg p-5 flex items-center justify-between gap-4">
+<main class="relative min-h-screen p-4 md:p-6">
+  <div class="max-w-[1200px] mx-auto flex flex-col gap-4">
+    <header class="hud-panel clip-path-chamfer-lg p-4 flex flex-wrap items-center justify-between gap-3">
       <div>
-        <p class="text-[10px] font-label tracking-[0.22em] text-primary/70">CONFIG_CONSOLE</p>
-        <h1 class="mt-2 text-2xl font-headline tracking-[0.12em]">Prompt, key, and runtime config.</h1>
+        <p class="text-2xs font-label tracking-widest text-primary/70">CONFIG_CONSOLE</p>
+        <h1 class="mt-2 text-xl font-headline tracking-wide">Prompt, key, and runtime config.</h1>
         <p id="settingsMeta" class="mt-2 text-sm text-on-surface-variant">Loading runtime metadata...</p>
       </div>
       <div class="flex items-center gap-3">
-        <a href="/" class="px-4 py-2 text-[10px] font-headline tracking-[0.22em] border border-cyan-400/20 text-primary hover:bg-cyan-400/10 transition-colors">BACK</a>
-        <button id="settingsReloadButton" class="px-4 py-2 text-[10px] font-headline tracking-[0.22em] border border-cyan-400/20 text-primary hover:bg-cyan-400/10 transition-colors">RELOAD</button>
-        <button id="settingsSaveButton" class="px-4 py-2 text-[10px] font-headline tracking-[0.22em] bg-primary text-black hover:opacity-90 transition-opacity">SAVE_CONFIG</button>
+        <a href="/" class="px-4 py-2 text-2xs font-headline tracking-widest border border-cyan-400/20 text-primary hover:bg-cyan-400/10 transition-colors">BACK</a>
+        <button id="settingsReloadButton" class="px-4 py-2 text-2xs font-headline tracking-widest border border-cyan-400/20 text-primary hover:bg-cyan-400/10 transition-colors">RELOAD</button>
+        <button id="settingsSaveButton" class="px-4 py-2 text-2xs font-headline tracking-widest bg-primary text-black hover:opacity-90 transition-opacity">SAVE_CONFIG</button>
       </div>
     </header>
 
-    <section class="grid grid-cols-1 xl:grid-cols-[0.9fr_1.1fr] gap-5">
-      <div class="hud-panel clip-path-chamfer-lg p-5 flex flex-col gap-5">
+    <section class="grid grid-cols-1 xl:grid-cols-[0.9fr_1.1fr] gap-4">
+      <div class="hud-panel clip-path-chamfer-lg p-4 flex flex-col gap-4">
         <div>
-          <p class="text-[10px] font-label tracking-[0.2em] text-primary/60">OPENAI_KEY</p>
-          <input id="openaiKeyInput" type="password" placeholder="Leave blank to keep current key" class="hud-input w-full text-[12px] px-3 py-3 mt-3"/>
+          <p class="text-2xs font-label tracking-widest text-primary/60">OPENAI_KEY</p>
+          <input id="openaiKeyInput" type="password" placeholder="Leave blank to keep current key" class="hud-input w-full text-xs px-3 py-3 mt-3"/>
           <p id="openaiHint" class="mt-2 text-sm text-on-surface-variant">KEY_STATUS: UNKNOWN</p>
         </div>
         <div>
-          <p class="text-[10px] font-label tracking-[0.2em] text-primary/60">WELCOME_PROMPT</p>
-          <textarea id="promptInput" rows="8" class="hud-input hud-scroll w-full text-[12px] px-3 py-3 mt-3 resize-none"></textarea>
+          <p class="text-2xs font-label tracking-widest text-primary/60">WELCOME_PROMPT</p>
+          <textarea id="promptInput" rows="8" class="hud-input hud-scroll w-full text-xs px-3 py-3 mt-3 resize-none"></textarea>
         </div>
         <div>
-          <p class="text-[10px] font-label tracking-[0.2em] text-primary/60">STATUS</p>
+          <p class="text-2xs font-label tracking-widest text-primary/60">STATUS</p>
           <p id="message" class="mt-2 text-sm text-on-surface-variant">Ready.</p>
         </div>
       </div>
 
-      <div class="hud-panel clip-path-chamfer-lg p-5">
-        <p class="text-[10px] font-label tracking-[0.2em] text-primary/60">CONFIG_JSON</p>
-        <textarea id="configEditor" rows="24" class="hud-input hud-scroll w-full h-[70vh] text-[11px] px-3 py-3 mt-3 resize-none font-mono leading-relaxed"></textarea>
+      <div class="hud-panel clip-path-chamfer-lg p-4">
+        <p class="text-2xs font-label tracking-widest text-primary/60">CONFIG_JSON</p>
+        <textarea id="configEditor" rows="24" class="hud-input hud-scroll w-full h-[70vh] text-xs px-3 py-3 mt-3 resize-none font-mono leading-relaxed"></textarea>
       </div>
     </section>
   </div>
@@ -975,25 +1000,33 @@ function renderTargets(targets) {
   targetsCountValue.textContent = String(items.length);
   if (!items.length) {
     const row = document.createElement("div");
-    row.className = "hud-panel-soft clip-path-chamfer-lg px-4 py-4 flex items-center gap-3";
-    row.innerHTML = '<div class="w-2 h-2 bg-surface-variant"></div><span class="text-[10px] font-headline text-on-surface-variant">NO_TARGETS_CONFIGURED</span><span class="ml-auto text-[9px] text-on-surface-variant">IDLE</span>';
+    row.className = "hud-panel-soft clip-path-chamfer-lg px-3 py-2.5 flex items-center gap-3";
+    const emptyDot = document.createElement("div");
+    emptyDot.className = "w-2 h-2 bg-surface-variant";
+    const emptyLabel = document.createElement("span");
+    emptyLabel.className = "text-2xs font-headline text-on-surface-variant";
+    emptyLabel.textContent = "NO_TARGETS_CONFIGURED";
+    const emptyState = document.createElement("span");
+    emptyState.className = "ml-auto text-2xs text-on-surface-variant";
+    emptyState.textContent = "IDLE";
+    row.append(emptyDot, emptyLabel, emptyState);
     targetsList.appendChild(row);
     return;
   }
 
   items.slice(0, 6).forEach((target, index) => {
     const row = document.createElement("div");
-    row.className = "hud-panel-soft clip-path-chamfer-lg px-4 py-4 flex items-center gap-3";
+    row.className = "hud-panel-soft clip-path-chamfer-lg px-3 py-2.5 flex items-center gap-3";
 
     const dot = document.createElement("div");
     dot.className = index === 0 ? "w-2 h-2 bg-primary animate-pulse" : "w-2 h-2 bg-surface-variant";
 
     const label = document.createElement("span");
-    label.className = index === 0 ? "text-[10px] font-headline" : "text-[10px] font-headline text-on-surface-variant";
+    label.className = index === 0 ? "text-2xs font-headline" : "text-2xs font-headline text-on-surface-variant";
     label.textContent = (target.label || target.id || "TARGET").toUpperCase();
 
     const state = document.createElement("span");
-    state.className = index === 0 ? "ml-auto text-[9px] text-primary/40" : "ml-auto text-[9px] text-on-surface-variant";
+    state.className = index === 0 ? "ml-auto text-2xs text-primary/40" : "ml-auto text-2xs text-on-surface-variant";
     state.textContent = target.id === "welcome_localhost" ? "REALTIME" : index === 0 ? "FIRST" : "READY";
 
     row.append(dot, label, state);
@@ -1058,9 +1091,14 @@ function renderState(state) {
     : `LISTENER: ${String(state.status || "OFFLINE").toUpperCase()}`;
   configPathMeta.textContent = `CONFIG: ${compactPath(state.config_path)}`;
   dashboardUrlMeta.textContent = `URL: ${compactPath(state.dashboard_url || "LOCALHOST")}`;
-  keyMeta.innerHTML = state.openai_key_present
-    ? '<span class="w-2 h-2 rounded-full bg-tertiary shadow-[0_0_5px_#c2ff99]"></span><span>OPENAI_LINK: VERIFIED</span>'
-    : '<span class="w-2 h-2 rounded-full bg-error shadow-[0_0_5px_#ff716c]"></span><span>OPENAI_LINK: REQUIRED</span>';
+  while (keyMeta.firstChild) keyMeta.removeChild(keyMeta.firstChild);
+  const keyDot = document.createElement("span");
+  keyDot.className = state.openai_key_present
+    ? "w-2 h-2 rounded-full bg-tertiary shadow-[0_0_5px_#c2ff99]"
+    : "w-2 h-2 rounded-full bg-error shadow-[0_0_5px_#ff716c]";
+  const keyLabel = document.createElement("span");
+  keyLabel.textContent = state.openai_key_present ? "OPENAI_LINK: VERIFIED" : "OPENAI_LINK: REQUIRED";
+  keyMeta.append(keyDot, keyLabel);
   renderTargets(state.config?.selected_targets || []);
   setSignalBars(state.openai_key_present ? 5 : state.listener_running ? 3 : 1);
   satelliteStatus.textContent = state.openai_key_present ? "CONTROL_LINK_READY" : "AUTH_REQUIRED";

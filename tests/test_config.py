@@ -1,3 +1,5 @@
+from contextlib import redirect_stdout
+import io
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
@@ -7,11 +9,14 @@ from clap_wake.config import (
     DEFAULT_CONFIG,
     build_clap_config,
     default_media_choice,
+    describe_configured_microphone,
     get_default_assets_audio_dir,
     get_default_workspace_dir,
     media_selection_is_ready,
+    migrate_config,
     parse_selection,
     prompt_for_custom_targets,
+    prompt_for_microphone_selection,
     prompt_for_custom_target,
     prompt_for_targets_selection,
     seed_default_media_selection,
@@ -88,8 +93,56 @@ class ConfigParsingTests(unittest.TestCase):
 
         self.assertEqual(selected, [1, 5])
 
+    def test_prompt_for_microphone_selection_auto_selects_single_device_without_prompt(self) -> None:
+        config = {"microphone": dict(DEFAULT_CONFIG["microphone"])}
+        devices = [
+            {
+                "index": 4,
+                "name": "USB Mic",
+                "hostapi_name": "WASAPI",
+                "is_default": True,
+            }
+        ]
+
+        with patch("clap_wake.config.list_input_microphones", return_value=devices):
+            with patch("builtins.input", side_effect=AssertionError("input should not be called")):
+                with redirect_stdout(io.StringIO()):
+                    prompt_for_microphone_selection(config, "fr")
+
+        self.assertEqual(config["microphone"]["input_device"], 4)
+        self.assertEqual(config["microphone"]["input_device_name"], "USB Mic")
+        self.assertEqual(describe_configured_microphone(config["microphone"]), "USB Mic (4)")
+
+    def test_prompt_for_microphone_selection_asks_when_multiple_devices_exist(self) -> None:
+        config = {"microphone": dict(DEFAULT_CONFIG["microphone"])}
+        devices = [
+            {
+                "index": 1,
+                "name": "Laptop Mic",
+                "hostapi_name": "WASAPI",
+                "is_default": True,
+            },
+            {
+                "index": 7,
+                "name": "USB Mic",
+                "hostapi_name": "WASAPI",
+                "is_default": False,
+            },
+        ]
+
+        with patch("clap_wake.config.list_input_microphones", return_value=devices):
+            with patch("clap_wake.config.terminal_ui_available", return_value=False):
+                with patch("builtins.input", return_value="2"):
+                    with redirect_stdout(io.StringIO()):
+                        prompt_for_microphone_selection(config, "en")
+
+        self.assertEqual(config["microphone"]["input_device"], 7)
+        self.assertEqual(config["microphone"]["input_device_name"], "USB Mic")
+
     def test_build_clap_config_derives_cooldown_from_profile(self) -> None:
         microphone = dict(DEFAULT_CONFIG["microphone"])
+        microphone["input_device"] = 3
+        microphone["input_device_name"] = "Desk Mic"
         microphone["profile"] = {
             "pair_count": 4,
             "average_peak": 0.8,
@@ -109,6 +162,27 @@ class ConfigParsingTests(unittest.TestCase):
 
         self.assertLess(clap_config.trigger_cooldown_seconds, 9.0)
         self.assertAlmostEqual(clap_config.trigger_cooldown_seconds, 1.38, places=2)
+        self.assertEqual(clap_config.input_device, 3)
+        self.assertEqual(clap_config.input_device_name, "Desk Mic")
+
+    def test_migrate_config_promotes_selected_url_to_url_mode(self) -> None:
+        config = {
+            "version": DEFAULT_CONFIG["version"],
+            "language": "fr",
+            "workspace_dir": "/tmp",
+            "selected_targets": [],
+            "microphone": dict(DEFAULT_CONFIG["microphone"]),
+            "media": dict(DEFAULT_CONFIG["media"]),
+            "realtime": dict(DEFAULT_CONFIG["realtime"]),
+            "dashboard": dict(DEFAULT_CONFIG["dashboard"]),
+        }
+        config["media"]["mode"] = "auto_downloads"
+        config["media"]["selected_url"] = "https://youtube.com/watch?v=abc123XYZ_0"
+        config["media"]["selected_folder_path"] = "/tmp/audio"
+
+        migrate_config(config)
+
+        self.assertEqual(config["media"]["mode"], "url")
 
     def test_default_workspace_dir_uses_dedicated_subfolder(self) -> None:
         self.assertEqual(

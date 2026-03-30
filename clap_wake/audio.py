@@ -50,6 +50,8 @@ class ClapConfig:
     minimum_clap_gap_seconds: float
     double_clap_max_gap_seconds: float
     trigger_cooldown_seconds: float
+    input_device: int | None = None
+    input_device_name: str | None = None
     profile: DoubleClapProfile | None = None
 
 
@@ -314,13 +316,17 @@ def calibrate_double_clap_profile(
         pending_at = now
         pending_features = features
 
-    with sd.InputStream(
-        samplerate=config.sample_rate,
-        channels=1,
-        dtype="float32",
-        blocksize=config.blocksize,
-        callback=callback,
-    ):
+    stream_kwargs = {
+        "samplerate": config.sample_rate,
+        "channels": 1,
+        "dtype": "float32",
+        "blocksize": config.blocksize,
+        "callback": callback,
+    }
+    if config.input_device is not None:
+        stream_kwargs["device"] = config.input_device
+
+    with sd.InputStream(**stream_kwargs):
         while not done.is_set():
             if time.monotonic() - start_time > timeout_seconds:
                 break
@@ -358,12 +364,16 @@ def run_microphone_loop(
             thread = threading.Thread(target=on_trigger, daemon=True)
             thread.start()
 
-    with sd.InputStream(
-        samplerate=config.sample_rate,
-        channels=1,
-        dtype="float32",
-        blocksize=config.blocksize,
-        callback=callback,
-    ):
+    stream_kwargs = {
+        "samplerate": config.sample_rate,
+        "channels": 1,
+        "dtype": "float32",
+        "blocksize": config.blocksize,
+        "callback": callback,
+    }
+    if config.input_device is not None:
+        stream_kwargs["device"] = config.input_device
+
+    with sd.InputStream(**stream_kwargs):
         while stop_event is None or not stop_event.is_set():
             time.sleep(0.25)
