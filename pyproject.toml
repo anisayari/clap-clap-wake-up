@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "clap-wake-up"
+version = "0.1.0"
+description = "Cross-platform double-clap wake-up daemon for macOS and Windows."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "numpy>=1.26,<3",
+  "Pillow>=10,<12",
+  "pygame>=2.6,<3",
+  "prompt_toolkit>=3.0.43,<4",
+  "pystray>=0.19.5,<1",
+  "sounddevice>=0.4.7,<1",
+]
+
+[project.scripts]
+clap-wake = "clap_wake.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["clap_wake*"]
