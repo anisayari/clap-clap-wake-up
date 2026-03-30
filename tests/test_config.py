@@ -7,6 +7,7 @@ from clap_wake.config import (
     DEFAULT_CONFIG,
     build_clap_config,
     default_media_choice,
+    get_default_assets_audio_dir,
     get_default_workspace_dir,
     media_selection_is_ready,
     parse_selection,
@@ -133,13 +134,13 @@ class ConfigParsingTests(unittest.TestCase):
         self.assertEqual(media["mode"], "single_file")
         self.assertEqual(media["selected_sound_path"], str(path))
 
-    def test_seed_default_media_selection_falls_back_to_acdc_youtube_url(self) -> None:
+    def test_seed_default_media_selection_defaults_to_assets_folder_when_highway_missing(self) -> None:
         media = dict(DEFAULT_CONFIG["media"])
         with patch("clap_wake.config.find_highway_mp3", return_value=None):
             seed_default_media_selection(media)
 
-        self.assertEqual(media["mode"], "url")
-        self.assertEqual(media["selected_url"], DEFAULT_CONFIG["media"]["youtube_fallback_url"])
+        self.assertEqual(media["mode"], "auto_downloads")
+        self.assertEqual(media["selected_folder_path"], str(get_default_assets_audio_dir()))
 
     def test_prompt_for_custom_targets_keeps_existing_targets_by_default(self) -> None:
         existing = [{"id": "custom_url", "label": "Docs", "url": "https://example.com"}]

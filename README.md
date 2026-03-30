@@ -88,6 +88,8 @@ clap-wake uninstall-autostart
 
 ## Setup Flow
 
+Before running setup, put your local audio files in `assets/audio/` if you want the project defaults to pick them up automatically.
+
 The interactive setup lets you:
 
 - choose the default language
@@ -102,7 +104,7 @@ The interactive setup lets you:
   - a random file from a folder
   - a manual choice from a folder
   - a video URL
-  - auto scan from `Downloads`
+  - auto scan from `assets/audio`
   - no local media
 
 ## Launch Targets

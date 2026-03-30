@@ -615,6 +615,10 @@ def get_default_downloads_dir() -> Path:
     return Path.home() / "Downloads"
 
 
+def get_default_assets_audio_dir() -> Path:
+    return Path(__file__).resolve().parent.parent / "assets" / "audio"
+
+
 def get_default_workspace_dir(base_dir: Path | None = None) -> Path:
     return (base_dir or Path.cwd()) / DEFAULT_WORKSPACE_DIRNAME
 
@@ -1048,7 +1052,7 @@ def prompt_for_media(config: dict[str, Any], language: str) -> None:
             "Un dossier, puis jouer un son au hasard",
             "Un dossier, puis choisir un son",
             "Une URL YouTube/video",
-            "Mode auto Downloads -> mp3 Highway sinon YouTube fallback",
+            "Mode auto assets/audio -> mp3 Highway sinon YouTube fallback",
             "Ne rien jouer",
         ],
         "en": [
@@ -1056,7 +1060,7 @@ def prompt_for_media(config: dict[str, Any], language: str) -> None:
             "A folder, then play a random sound",
             "A folder, then choose one sound",
             "A YouTube/video URL",
-            "Auto Downloads mode -> Highway mp3, otherwise YouTube fallback",
+            "Auto assets/audio mode -> Highway mp3, otherwise YouTube fallback",
             "Play nothing",
         ],
     }[language]
@@ -1122,7 +1126,7 @@ def prompt_for_media(config: dict[str, Any], language: str) -> None:
 
         if raw == "5":
             media["mode"] = "auto_downloads"
-            media["selected_folder_path"] = str(get_default_downloads_dir())
+            media["selected_folder_path"] = str(get_default_assets_audio_dir())
             return
 
         media["mode"] = "none"
@@ -1151,16 +1155,15 @@ def seed_default_media_selection(media: dict[str, Any]) -> None:
     if media.get("mode") not in {"auto_downloads", "", None}:
         return
 
-    downloads_dir = media.get("selected_folder_path") or get_default_downloads_dir()
-    media["selected_folder_path"] = str(Path(downloads_dir).expanduser())
-    detected = find_highway_mp3(downloads_dir)
+    assets_dir = media.get("selected_folder_path") or get_default_assets_audio_dir()
+    media["selected_folder_path"] = str(Path(assets_dir).expanduser())
+    detected = find_highway_mp3(assets_dir)
     if detected and detected.exists():
         media["mode"] = "single_file"
         media["selected_sound_path"] = str(detected)
         return
 
-    media["mode"] = "url"
-    media["selected_url"] = media.get("youtube_fallback_url") or YOUTUBE_FALLBACK_URL
+    media["mode"] = "auto_downloads"
 
 
 def media_selection_is_ready(media: dict[str, Any], choice: str) -> bool:
