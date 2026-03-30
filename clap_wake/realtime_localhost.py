@@ -238,6 +238,11 @@ def find_free_port(start_port: int) -> int:
 
 def build_index_html(public_config: dict[str, Any]) -> str:
     language = public_config.get("language", DEFAULT_LANGUAGE)
+    assistant_name = public_config.get("assistant_name", "Jarvis")
+    model = public_config.get("model", "gpt-realtime")
+    voice = public_config.get("voice", "marin")
+    welcome_name = public_config.get("welcome_name", "")
+    prompt_preview = public_config.get("welcome_prompt", "")
     copy = {
         "fr": {
             "title": "Clap Wake Up Voice",
@@ -248,6 +253,15 @@ def build_index_html(public_config: dict[str, Any]) -> str:
             "disconnect": "Couper",
             "status": "Preparation...",
             "log": "Journal",
+            "overview": "Voice Interface",
+            "assistant": "Assistant",
+            "voice": "Voice",
+            "model": "Model",
+            "user": "Wake Name",
+            "prompt": "Welcome Prompt",
+            "session": "Session Status",
+            "events": "Realtime Log",
+            "hint": "This is the clap-triggered Realtime page. It should open fast, speak first, and stay usable while the session is live.",
         },
         "en": {
             "title": "Clap Wake Up Voice",
@@ -258,6 +272,15 @@ def build_index_html(public_config: dict[str, Any]) -> str:
             "disconnect": "Disconnect",
             "status": "Preparing...",
             "log": "Log",
+            "overview": "Voice Interface",
+            "assistant": "Assistant",
+            "voice": "Voice",
+            "model": "Model",
+            "user": "Wake Name",
+            "prompt": "Welcome Prompt",
+            "session": "Session Status",
+            "events": "Realtime Log",
+            "hint": "This is the clap-triggered Realtime page. It should open fast, speak first, and stay usable while the session is live.",
         },
     }[language]
     return f"""<!doctype html>
@@ -266,24 +289,140 @@ def build_index_html(public_config: dict[str, Any]) -> str:
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{copy["title"]}</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Inter:wght@300;400;600&display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
     <link rel="stylesheet" href="/styles.css" />
   </head>
-  <body>
-    <main class="shell">
-      <section class="hero">
-        <p class="eyebrow">{copy["eyebrow"]}</p>
-        <h1>{copy["headline"]}</h1>
-        <p class="lede">{copy["lede"]}</p>
-        <div class="actions">
-          <button id="connectButton">{copy["connect"]}</button>
-          <button id="disconnectButton" class="secondary">{copy["disconnect"]}</button>
+  <body class="bg-background text-on-background font-body overflow-hidden">
+    <div class="fixed inset-0 grid-bg pointer-events-none"></div>
+    <div class="fixed inset-0 scanline pointer-events-none"></div>
+
+    <header class="fixed top-0 w-full z-50 h-16 px-6 bg-[#0a0e14]/82 backdrop-blur-xl border-b border-cyan-500/18 shadow-[0_0_18px_rgba(129,236,255,0.12)]">
+      <div class="h-full flex items-center justify-between gap-6">
+        <div class="flex items-center gap-4 min-w-0">
+          <div class="w-10 h-10 flex items-center justify-center border border-primary/20 bg-primary/5">
+            <span class="material-symbols-outlined text-primary">neurology</span>
+          </div>
+          <div class="min-w-0">
+            <div class="flex items-center gap-3 flex-wrap">
+              <span class="text-cyan-400 font-bold tracking-[0.26em] font-headline text-sm">JARVIS_OS</span>
+              <span class="text-[10px] text-primary/60 tracking-[0.18em] font-label">{copy["overview"].upper()}</span>
+            </div>
+            <p class="text-[11px] text-on-surface-variant truncate">{copy["hint"]}</p>
+          </div>
         </div>
-        <p id="status" class="status">{copy["status"]}</p>
-      </section>
-      <section class="panel">
-        <h2>{copy["log"]}</h2>
-        <pre id="log"></pre>
-      </section>
+        <div class="hud-chip px-3 py-2 flex items-center gap-2 text-[10px] font-headline tracking-[0.18em]">
+          <span class="w-2 h-2 rounded-full bg-primary shadow-[0_0_8px_rgba(129,236,255,0.7)]"></span>
+          <span id="status">{copy["status"]}</span>
+        </div>
+      </div>
+    </header>
+
+    <aside class="fixed left-0 top-16 h-[calc(100vh-64px)] z-40 bg-[#0a0e14]/40 backdrop-blur-md w-24 border-r border-cyan-500/10 px-3 py-6">
+      <div class="flex flex-col items-center gap-2 mb-8">
+        <div class="w-12 h-12 flex items-center justify-center border border-primary/20 bg-primary/5">
+          <span class="material-symbols-outlined text-primary" style="font-variation-settings: 'FILL' 1;">graphic_eq</span>
+        </div>
+        <span class="text-cyan-500 font-black text-[10px] font-headline tracking-[0.16em] text-center">VOICE_CORE</span>
+      </div>
+      <div class="flex flex-col gap-4">
+        <button id="connectButton" class="w-full flex flex-col items-center py-4 text-cyan-400 bg-cyan-500/20 border-l-4 border-cyan-400 transition-transform">
+          <span class="material-symbols-outlined mb-1">power</span>
+          <span class="font-['Space_Grotesk'] uppercase text-[10px] tracking-tighter">{copy["connect"].upper()}</span>
+        </button>
+        <button id="disconnectButton" class="w-full flex flex-col items-center py-4 text-cyan-900/60 hover:bg-cyan-500/5 hover:text-cyan-200 transition-all">
+          <span class="material-symbols-outlined mb-1">power_off</span>
+          <span class="font-['Space_Grotesk'] uppercase text-[10px] tracking-tighter">{copy["disconnect"].upper()}</span>
+        </button>
+      </div>
+    </aside>
+
+    <main class="ml-24 mt-16 min-h-[calc(100vh-64px)] p-6 md:p-8">
+      <div class="max-w-[1600px] mx-auto grid grid-cols-1 xl:grid-cols-[1.05fr_0.95fr] gap-6">
+        <section class="hud-panel clip-path-chamfer-lg p-6 md:p-8 min-h-[40rem] relative overflow-hidden">
+          <div class="absolute inset-0 pointer-events-none opacity-50">
+            <div class="absolute -top-12 left-10 w-48 h-48 rounded-full bg-primary/10 blur-3xl"></div>
+            <div class="absolute bottom-10 right-8 w-56 h-56 rounded-full bg-secondary/8 blur-3xl"></div>
+          </div>
+          <div class="relative h-full flex flex-col justify-between gap-8">
+            <div class="max-w-xl">
+              <p class="text-[11px] font-label tracking-[0.22em] text-primary/70 mb-3">{copy["eyebrow"].upper()}</p>
+              <h1 class="text-4xl md:text-5xl font-headline font-semibold tracking-[0.08em] text-on-background">{copy["headline"]}</h1>
+              <p class="mt-4 text-sm text-on-surface-variant leading-6">{copy["lede"]}</p>
+            </div>
+
+            <div class="relative mx-auto flex items-center justify-center min-w-[18rem] min-h-[18rem]">
+              <div class="absolute w-80 h-80 border border-primary/12 rounded-full animate-pulse-ring"></div>
+              <div class="absolute w-64 h-64 border border-primary/18 rounded-full animate-pulse-ring" style="animation-delay: 0.8s"></div>
+              <div class="absolute w-[21rem] h-[21rem] border-t-2 border-b-2 border-primary/25 rounded-full animate-[spin_12s_linear_infinite]"></div>
+              <div class="absolute w-[18rem] h-[18rem] border-l border-r border-secondary/20 rounded-full animate-[spin_18s_linear_infinite_reverse]"></div>
+              <div class="w-52 h-52 rounded-full border border-primary/40 bg-gradient-to-br from-primary/28 via-surface-container to-surface-container-lowest backdrop-blur-xl shadow-[0_0_70px_rgba(129,236,255,0.18)] flex flex-col items-center justify-center relative overflow-hidden">
+                <div class="absolute inset-0 bg-radial-gradient from-primary/20 via-transparent to-transparent animate-pulse"></div>
+                <span class="material-symbols-outlined text-7xl text-primary drop-shadow-[0_0_12px_rgba(129,236,255,0.7)]" style="font-variation-settings: 'FILL' 1;">neurology</span>
+                <p class="mt-3 text-[11px] font-label tracking-[0.28em] text-primary/70">REALTIME_CORE</p>
+                <p id="assistantName" class="mt-2 text-sm font-headline tracking-[0.2em] text-on-background">{assistant_name.upper()}</p>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div class="hud-panel-soft clip-path-chamfer-lg p-5">
+                <p class="text-[10px] font-label tracking-[0.2em] text-primary/60">{copy["assistant"].upper()}</p>
+                <p class="mt-2 text-lg font-headline tracking-[0.12em] text-on-background">{assistant_name}</p>
+                <p class="mt-2 text-sm text-on-surface-variant">Voice-first assistant launched by a double clap trigger.</p>
+              </div>
+              <div class="hud-panel-soft clip-path-chamfer-lg p-5">
+                <p class="text-[10px] font-label tracking-[0.2em] text-primary/60">{copy["session"].upper()}</p>
+                <p id="connectionState" class="mt-2 text-lg font-headline tracking-[0.12em] text-on-background">BOOTING</p>
+                <p class="mt-2 text-sm text-on-surface-variant">WebRTC audio session and Realtime control channel state.</p>
+              </div>
+              <div class="hud-panel-soft clip-path-chamfer-lg p-5">
+                <p class="text-[10px] font-label tracking-[0.2em] text-primary/60">{copy["model"].upper()}</p>
+                <p class="mt-2 text-lg font-headline tracking-[0.12em] text-on-background">{model}</p>
+                <p class="mt-2 text-sm text-on-surface-variant">Realtime model used for the local wake-up voice session.</p>
+              </div>
+              <div class="hud-panel-soft clip-path-chamfer-lg p-5">
+                <p class="text-[10px] font-label tracking-[0.2em] text-primary/60">{copy["voice"].upper()}</p>
+                <p class="mt-2 text-lg font-headline tracking-[0.12em] text-on-background">{voice}</p>
+                <p class="mt-2 text-sm text-on-surface-variant">Configured output voice for the current session.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="flex flex-col gap-6">
+          <div class="hud-panel clip-path-chamfer-lg p-5">
+            <div class="flex items-center justify-between gap-4 mb-5">
+              <div>
+                <p class="text-[10px] font-label tracking-[0.2em] text-primary/60">SESSION_CONTEXT</p>
+                <h2 class="mt-1 text-xl font-headline tracking-[0.12em] text-on-background">{copy["prompt"]}</h2>
+              </div>
+              <span class="material-symbols-outlined text-primary/70 text-3xl">notes</span>
+            </div>
+            <div class="space-y-4">
+              <div>
+                <p class="text-[10px] font-label tracking-[0.18em] text-primary/60">{copy["user"].upper()}</p>
+                <p class="mt-1 text-sm font-headline tracking-[0.14em] text-on-background">{welcome_name or "-"}</p>
+              </div>
+              <div>
+                <p class="text-[10px] font-label tracking-[0.18em] text-primary/60">{copy["prompt"].upper()}</p>
+                <p class="mt-1 text-sm text-on-surface-variant leading-6">{prompt_preview}</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="hud-panel clip-path-chamfer-lg p-5 min-h-[22rem] flex flex-col">
+            <div class="flex items-center justify-between gap-4 mb-5">
+              <div>
+                <p class="text-[10px] font-label tracking-[0.2em] text-primary/60">EVENT_STREAM</p>
+                <h2 class="mt-1 text-xl font-headline tracking-[0.12em] text-on-background">{copy["events"]}</h2>
+              </div>
+              <span class="material-symbols-outlined text-primary/70 text-3xl">terminal</span>
+            </div>
+            <pre id="log" class="hud-log flex-1"></pre>
+          </div>
+        </section>
+      </div>
     </main>
     <script src="/app.js" type="module"></script>
   </body>
@@ -294,95 +433,89 @@ def build_index_html(public_config: dict[str, Any]) -> str:
 def build_styles_css() -> str:
     return """
 :root {
-  color-scheme: light;
-  --bg: #f4efe7;
-  --ink: #171717;
-  --muted: #57534e;
-  --card: rgba(255,255,255,0.72);
-  --line: rgba(23,23,23,0.12);
-  --accent: #d97706;
-  --accent-2: #0f766e;
+  color-scheme: dark;
+  --surface: #0a0e14;
+  --surface-container: #151a21;
+  --surface-container-low: #0f141a;
+  --surface-container-highest: #20262f;
+  --surface-variant: #20262f;
+  --outline-variant: #44484f;
+  --primary: #81ecff;
+  --secondary: #ff7350;
+  --tertiary: #c2ff99;
+  --on-background: #f1f3fc;
+  --on-surface-variant: #a8abb3;
+  --error: #ff716c;
 }
 * { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; }
 body {
-  margin: 0;
-  min-height: 100vh;
-  font-family: Georgia, "Iowan Old Style", serif;
-  color: var(--ink);
+  font-family: Inter, sans-serif;
+  background: var(--surface);
+  color: var(--on-background);
+}
+.font-headline { font-family: "Space Grotesk", sans-serif; }
+.font-body { font-family: Inter, sans-serif; }
+.font-label { font-family: "Space Grotesk", sans-serif; }
+.clip-path-chamfer-lg {
+  clip-path: polygon(0 0, 95% 0, 100% 5%, 100% 100%, 5% 100%, 0 95%);
+}
+.grid-bg {
+  background-image:
+    linear-gradient(to right, rgba(129, 236, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(129, 236, 255, 0.05) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+.scanline {
+  background: linear-gradient(to bottom, transparent 50%, rgba(129, 236, 255, 0.02) 50%);
+  background-size: 100% 4px;
+}
+@keyframes pulse-ring {
+  0% { transform: scale(0.8); opacity: 0.5; }
+  100% { transform: scale(1.5); opacity: 0; }
+}
+.animate-pulse-ring {
+  animation: pulse-ring 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+.bg-background { background-color: var(--surface); }
+.text-on-background { color: var(--on-background); }
+.text-on-surface-variant { color: var(--on-surface-variant); }
+.text-primary { color: var(--primary); }
+.text-error { color: var(--error); }
+.border-primary { border-color: rgba(129,236,255,0.2); }
+.hud-chip {
+  background: rgba(129,236,255,0.08);
+  border: 1px solid rgba(129,236,255,0.12);
+}
+.hud-panel {
   background:
-    radial-gradient(circle at top left, rgba(217,119,6,0.16), transparent 30%),
-    radial-gradient(circle at bottom right, rgba(15,118,110,0.12), transparent 28%),
-    linear-gradient(180deg, #f8f5ef 0%, var(--bg) 100%);
+    linear-gradient(180deg, rgba(129,236,255,0.10), rgba(129,236,255,0.00) 24%),
+    rgba(15, 20, 26, 0.72);
+  backdrop-filter: blur(18px);
+  border: 1px solid rgba(129,236,255,0.14);
 }
-.shell {
-  width: min(980px, calc(100vw - 32px));
-  margin: 32px auto;
-  display: grid;
-  gap: 24px;
-  grid-template-columns: 1.3fr 1fr;
+.hud-panel-soft {
+  background:
+    linear-gradient(180deg, rgba(129,236,255,0.06), rgba(129,236,255,0.00) 22%),
+    rgba(15, 20, 26, 0.58);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(129,236,255,0.10);
 }
-.hero, .panel {
-  backdrop-filter: blur(14px);
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: 28px;
-  padding: 28px;
-  box-shadow: 0 16px 48px rgba(0,0,0,0.06);
-}
-.eyebrow {
-  margin: 0 0 12px;
-  font-size: 12px;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: var(--accent-2);
-}
-h1, h2 { margin: 0 0 12px; }
-h1 { font-size: clamp(36px, 5vw, 68px); line-height: 0.95; }
-.lede, .status {
-  margin: 0 0 18px;
-  font-size: 18px;
-  line-height: 1.5;
-  color: var(--muted);
-}
-.actions {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-  margin-bottom: 16px;
-}
-button {
-  appearance: none;
-  border: 0;
-  border-radius: 999px;
-  padding: 14px 20px;
-  font: inherit;
-  font-weight: 700;
-  background: var(--ink);
-  color: #fff;
-  cursor: pointer;
-}
-button.secondary {
-  background: rgba(23,23,23,0.08);
-  color: var(--ink);
-}
-pre {
+.hud-log {
   margin: 0;
-  min-height: 340px;
-  max-height: 60vh;
   overflow: auto;
   white-space: pre-wrap;
   font-family: "SF Mono", "Menlo", monospace;
-  font-size: 13px;
-  line-height: 1.5;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--on-background);
+  background: rgba(0,0,0,0.18);
+  border: 1px solid rgba(129,236,255,0.08);
+  padding: 16px;
 }
-@media (max-width: 820px) {
-  .shell {
-    grid-template-columns: 1fr;
-    margin: 16px auto;
-  }
-  .hero, .panel { padding: 20px; }
-}
-"""
+.hud-log::-webkit-scrollbar { width: 8px; height: 8px; }
+.hud-log::-webkit-scrollbar-thumb { background: rgba(129,236,255,0.18); }
+    """
 
 
 def build_app_js(server: RealtimeWelcomeServer) -> str:
@@ -478,6 +611,7 @@ async function connect() {{
     }};
     pc.onconnectionstatechange = () => {{
       setStatus(`${{COPY.webrtcState}}: ${{pc.connectionState}}`);
+      document.getElementById("connectionState").textContent = String(pc.connectionState || "booting").toUpperCase();
       log(`${{COPY.webrtcState}} -> ${{pc.connectionState}}`);
     }};
 
@@ -536,17 +670,19 @@ function sendWelcomeBootstrap() {{
     session: {{
       type: "realtime",
       model: PUBLIC_CONFIG.model,
-      output_modalities: ["audio", "text"],
+      output_modalities: ["audio"],
       audio: {{
+        input: {{
+          turn_detection: {{
+            type: "server_vad",
+            threshold: 0.5,
+            prefix_padding_ms: 300,
+            silence_duration_ms: 500
+          }}
+        }},
         output: {{
           voice: PUBLIC_CONFIG.voice,
         }}
-      }},
-      turn_detection: {{
-        type: "semantic_vad",
-        eagerness: "low",
-        create_response: true,
-        interrupt_response: true
       }},
       instructions: buildInstructions(),
     }},
@@ -569,7 +705,7 @@ function sendWelcomeBootstrap() {{
   dc.send(JSON.stringify({{
     type: "response.create",
     response: {{
-      output_modalities: ["audio", "text"],
+      output_modalities: ["audio"],
     }},
   }}));
 }}
@@ -588,6 +724,16 @@ function buildWelcomeMessage() {{
 }}
 
 function handleRealtimeEvent(event) {{
+  if (event.type === "response.audio_transcript.delta" && event.delta) {{
+    log(`${{COPY.assistant}}: ${{event.delta}}`);
+    return;
+  }}
+
+  if (event.type === "response.output_audio_transcript.delta" && event.delta) {{
+    log(`${{COPY.assistant}}: ${{event.delta}}`);
+    return;
+  }}
+
   if (event.type === "response.text.delta" && event.delta) {{
     log(`${{COPY.assistant}}: ${{event.delta}}`);
     return;

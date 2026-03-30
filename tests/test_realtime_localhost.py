@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import patch
 
 from clap_wake.config import DEFAULT_CONFIG
-from clap_wake.realtime_localhost import mint_ephemeral_token
+from clap_wake.realtime_localhost import RealtimeWelcomeServer, build_app_js, mint_ephemeral_token
 
 
 class RealtimeLocalhostTests(unittest.TestCase):
@@ -63,6 +63,16 @@ class RealtimeLocalhostTests(unittest.TestCase):
         self.assertEqual(payload["value"], "ephemeral")
         request = urlopen_mock.call_args.args[0]
         self.assertEqual(request.headers["Authorization"], "Bearer sk-dotenv")
+
+    def test_app_js_uses_audio_turn_detection_and_audio_only_output(self) -> None:
+        server = RealtimeWelcomeServer(config=self.build_config(), port=8767)
+        script = build_app_js(server)
+
+        self.assertIn('turn_detection', script)
+        self.assertIn('input: {', script)
+        self.assertIn('output_modalities: ["audio"]', script)
+        self.assertNotIn('output_modalities: ["audio", "text"]', script)
+        self.assertNotIn('semantic_vad', script)
 
 
 if __name__ == "__main__":
