@@ -289,154 +289,160 @@ def build_index_html(public_config: dict[str, Any]) -> str:
     }[language]
     return f"""<!doctype html>
 <html lang="{language}">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>{copy["title"]}</title>
-    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Inter:wght@300;400;600&display=swap" rel="stylesheet"/>
-    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
-    <link rel="stylesheet" href="/styles.css" />
-  </head>
-  <body class="bg-background text-on-background font-body overflow-hidden">
-    <div class="fixed inset-0 grid-bg pointer-events-none"></div>
-    <div class="fixed inset-0 scanline pointer-events-none"></div>
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>{copy["title"]}</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Inter:wght@300;400;600&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<script>
+tailwind.config = {{
+  darkMode: "class",
+  theme: {{
+    extend: {{
+      colors: {{
+        primary:"#81ecff","primary-dim":"#00d4ec",secondary:"#ff7350",tertiary:"#c2ff99",
+        background:"#0a0e14",surface:"#0a0e14","surface-bright":"#262c36",
+        "surface-container":"#151a21","surface-container-low":"#0f141a",
+        "surface-container-high":"#1b2028","surface-variant":"#20262f",
+        "surface-container-lowest":"#000000",
+        "on-background":"#f1f3fc","on-surface":"#f1f3fc","on-surface-variant":"#a8abb3",
+        "on-primary":"#005762","outline-variant":"#44484f",
+        error:"#ff716c","error-dim":"#d7383b"
+      }},
+      fontSize: {{ "2xs": ["0.625rem", {{ lineHeight: "1rem" }}] }},
+      fontFamily: {{ headline:["Space Grotesk"],body:["Inter"],label:["Space Grotesk"] }},
+      borderRadius: {{"DEFAULT":"0px","lg":"0px","xl":"0px","full":"9999px"}},
+    }},
+  }},
+}}
+</script>
+<link rel="stylesheet" href="/styles.css"/>
+</head>
+<body class="dark bg-background text-on-background font-body overflow-x-hidden min-h-screen">
+<div class="fixed inset-0 grid-bg pointer-events-none"></div>
+<div class="fixed inset-0 scanline pointer-events-none"></div>
 
-    <header class="fixed top-0 w-full z-50 h-16 px-6 bg-[#0a0e14]/82 backdrop-blur-xl border-b border-cyan-500/18 shadow-[0_0_18px_rgba(129,236,255,0.12)]">
-      <div class="h-full flex items-center justify-between gap-6">
-        <div class="flex items-center gap-4 min-w-0">
-          <div class="w-10 h-10 flex items-center justify-center border border-primary/20 bg-primary/5">
-            <span class="material-symbols-outlined text-primary">neurology</span>
-          </div>
-          <div class="min-w-0">
-            <div class="flex items-center gap-3 flex-wrap">
-              <span class="text-cyan-400 font-bold tracking-[0.26em] font-headline text-sm">JARVIS_OS</span>
-              <span class="text-[10px] text-primary/60 tracking-[0.18em] font-label">{copy["overview"].upper()}</span>
-            </div>
-            <p class="text-[11px] text-on-surface-variant truncate">{copy["hint"]}</p>
-          </div>
-        </div>
-        <div class="hud-chip px-3 py-2 flex items-center gap-2 text-[10px] font-headline tracking-[0.18em]">
-          <span class="w-2 h-2 rounded-full bg-primary shadow-[0_0_8px_rgba(129,236,255,0.7)]"></span>
-          <span id="status">{copy["status"]}</span>
-        </div>
-      </div>
-    </header>
+<header class="fixed top-0 w-full z-50 h-12 px-4 bg-surface/85 backdrop-blur-xl shadow-[0_0_16px_rgba(129,236,255,0.08)]">
+<div class="h-full flex items-center justify-between gap-3">
+<div class="flex items-center gap-2.5 min-w-0">
+<div class="w-7 h-7 flex items-center justify-center border border-primary/15 bg-primary/5">
+<span class="material-symbols-outlined text-primary text-base" style="font-variation-settings:'FILL' 1;">graphic_eq</span>
+</div>
+<div class="min-w-0">
+<span class="text-primary font-bold tracking-widest font-headline text-xs">{copy["title"].upper()}</span>
+<p class="text-2xs text-on-surface-variant truncate hidden sm:block">{copy["overview"]}</p>
+</div>
+</div>
+<div class="hud-chip px-2 py-0.5 flex items-center gap-1.5 text-2xs font-headline tracking-widest text-primary">
+<span class="w-1.5 h-1.5 rounded-full bg-primary shadow-[0_0_6px_rgba(129,236,255,0.6)]"></span>
+<span id="status">{copy["status"]}</span>
+</div>
+</div>
+</header>
 
-    <aside class="fixed left-0 top-16 h-[calc(100vh-64px)] z-40 bg-[#0a0e14]/40 backdrop-blur-md w-24 border-r border-cyan-500/10 px-3 py-6">
-      <div class="flex flex-col items-center gap-2 mb-8">
-        <div class="w-12 h-12 flex items-center justify-center border border-primary/20 bg-primary/5">
-          <span class="material-symbols-outlined text-primary" style="font-variation-settings: 'FILL' 1;">graphic_eq</span>
-        </div>
-        <span class="text-cyan-500 font-black text-[10px] font-headline tracking-[0.16em] text-center">VOICE_CORE</span>
-      </div>
-      <div class="flex flex-col gap-4">
-        <button id="connectButton" class="w-full flex flex-col items-center py-4 text-cyan-400 bg-cyan-500/20 border-l-4 border-cyan-400 transition-transform">
-          <span class="material-symbols-outlined mb-1">power</span>
-          <span class="font-['Space_Grotesk'] uppercase text-[10px] tracking-tighter">{copy["connect"].upper()}</span>
-        </button>
-        <button id="disconnectButton" class="w-full flex flex-col items-center py-4 text-cyan-900/60 hover:bg-cyan-500/5 hover:text-cyan-200 transition-all">
-          <span class="material-symbols-outlined mb-1">power_off</span>
-          <span class="font-['Space_Grotesk'] uppercase text-[10px] tracking-tighter">{copy["disconnect"].upper()}</span>
-        </button>
-      </div>
-    </aside>
+<main class="mt-12 min-h-[calc(100vh-3rem)] pb-24 overflow-y-auto">
+<div class="max-w-5xl mx-auto px-4 md:px-6 flex flex-col gap-5">
 
-    <main class="ml-24 mt-16 min-h-[calc(100vh-64px)] p-6 md:p-8">
-      <div class="max-w-[1600px] mx-auto grid grid-cols-1 xl:grid-cols-[1.05fr_0.95fr] gap-6">
-        <section class="hud-panel clip-path-chamfer-lg p-6 md:p-8 min-h-[40rem] relative overflow-hidden">
-          <div class="absolute inset-0 pointer-events-none opacity-50">
-            <div class="absolute -top-12 left-10 w-48 h-48 rounded-full bg-primary/10 blur-3xl"></div>
-            <div class="absolute bottom-10 right-8 w-56 h-56 rounded-full bg-secondary/8 blur-3xl"></div>
-          </div>
-          <div class="relative h-full flex flex-col justify-between gap-8">
-            <div class="max-w-xl">
-              <p class="text-[11px] font-label tracking-[0.22em] text-primary/70 mb-3">{copy["eyebrow"].upper()}</p>
-              <h1 class="text-4xl md:text-5xl font-headline font-semibold tracking-[0.08em] text-on-background">{copy["headline"]}</h1>
-              <p class="mt-4 text-sm text-on-surface-variant leading-6">{copy["lede"]}</p>
-            </div>
+<section class="relative flex flex-col items-center text-center pt-6 pb-2">
+<div class="absolute inset-0 pointer-events-none">
+<div class="absolute top-0 left-1/2 -translate-x-1/2 w-96 h-96 rounded-full bg-primary/5 blur-3xl"></div>
+</div>
+<p class="text-2xs font-label tracking-widest text-primary/50 relative">{copy["eyebrow"].upper()}</p>
+<h1 class="text-3xl md:text-4xl font-headline font-semibold tracking-wide text-on-background mt-1.5 relative">{copy["headline"]}</h1>
+<p class="text-xs text-on-surface-variant mt-1 relative">{copy["lede"]}</p>
 
-            <div class="relative mx-auto flex items-center justify-center min-w-[18rem] min-h-[18rem]">
-              <div class="absolute w-80 h-80 border border-primary/12 rounded-full animate-pulse-ring"></div>
-              <div class="absolute w-64 h-64 border border-primary/18 rounded-full animate-pulse-ring" style="animation-delay: 0.8s"></div>
-              <div class="absolute w-[21rem] h-[21rem] border-t-2 border-b-2 border-primary/25 rounded-full animate-[spin_12s_linear_infinite]"></div>
-              <div class="absolute w-[18rem] h-[18rem] border-l border-r border-secondary/20 rounded-full animate-[spin_18s_linear_infinite_reverse]"></div>
-              <div class="w-52 h-52 rounded-full border border-primary/40 bg-gradient-to-br from-primary/28 via-surface-container to-surface-container-lowest backdrop-blur-xl shadow-[0_0_70px_rgba(129,236,255,0.18)] flex flex-col items-center justify-center relative overflow-hidden">
-                <div class="absolute inset-0 bg-radial-gradient from-primary/20 via-transparent to-transparent animate-pulse"></div>
-                <span class="material-symbols-outlined text-7xl text-primary drop-shadow-[0_0_12px_rgba(129,236,255,0.7)]" style="font-variation-settings: 'FILL' 1;">neurology</span>
-                <p class="mt-3 text-[11px] font-label tracking-[0.28em] text-primary/70">REALTIME_CORE</p>
-                <p id="assistantName" class="mt-2 text-sm font-headline tracking-[0.2em] text-on-background">{assistant_name.upper()}</p>
-              </div>
-            </div>
+<div class="relative flex items-center justify-center mt-6 w-64 h-64 md:w-72 md:h-72">
+<div class="absolute w-56 h-56 md:w-64 md:h-64 border border-primary/8 rounded-full animate-pulse-ring"></div>
+<div class="absolute w-44 h-44 md:w-52 md:h-52 border border-primary/12 rounded-full animate-pulse-ring" style="animation-delay:0.9s"></div>
+<div class="absolute w-64 h-64 md:w-72 md:h-72 border-t border-b border-primary/15 rounded-full animate-[spin_16s_linear_infinite]"></div>
+<div class="absolute w-52 h-52 md:w-60 md:h-60 border-l border-r border-secondary/10 rounded-full animate-[spin_22s_linear_infinite_reverse]"></div>
+<div class="w-40 h-40 md:w-44 md:h-44 rounded-full border border-primary/25 bg-gradient-to-br from-primary/15 via-surface-container to-surface-container-lowest backdrop-blur-xl shadow-[0_0_80px_rgba(129,236,255,0.12)] flex flex-col items-center justify-center relative overflow-hidden">
+<div class="absolute inset-0 radial-glow animate-pulse"></div>
+<span class="material-symbols-outlined text-5xl md:text-6xl text-primary drop-shadow-[0_0_14px_rgba(129,236,255,0.5)]" style="font-variation-settings:'FILL' 1;">neurology</span>
+<p class="mt-1 text-2xs font-label tracking-widest text-primary/50">REALTIME_CORE</p>
+<p class="mt-0.5 text-xs font-headline tracking-widest text-on-background">{assistant_name.upper()}</p>
+</div>
+</div>
 
-            <div class="hud-panel-soft clip-path-chamfer-lg p-5 max-w-3xl mx-auto w-full">
-              <p class="text-[10px] font-label tracking-[0.2em] text-primary/60">{copy["transcript"].upper()}</p>
-              <p id="liveTranscript" class="mt-3 text-base md:text-lg font-headline tracking-[0.04em] text-on-background min-h-[3.5rem] leading-7">{copy["transcript_waiting"]}</p>
-            </div>
+<div class="hud-panel clip-path-chamfer-lg p-4 mt-4 w-full max-w-2xl text-left">
+<p class="text-2xs font-label tracking-widest text-primary/40">{copy["transcript"].upper()}</p>
+<p id="liveTranscript" class="mt-2 text-sm md:text-base font-headline tracking-wide text-on-background min-h-[3rem] leading-relaxed">{copy["transcript_waiting"]}</p>
+</div>
+</section>
 
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div class="hud-panel-soft clip-path-chamfer-lg p-5">
-                <p class="text-[10px] font-label tracking-[0.2em] text-primary/60">{copy["assistant"].upper()}</p>
-                <p class="mt-2 text-lg font-headline tracking-[0.12em] text-on-background">{assistant_name}</p>
-                <p class="mt-2 text-sm text-on-surface-variant">Voice-first assistant launched by a double clap trigger.</p>
-              </div>
-              <div class="hud-panel-soft clip-path-chamfer-lg p-5">
-                <p class="text-[10px] font-label tracking-[0.2em] text-primary/60">{copy["session"].upper()}</p>
-                <p id="connectionState" class="mt-2 text-lg font-headline tracking-[0.12em] text-on-background">BOOTING</p>
-                <p class="mt-2 text-sm text-on-surface-variant">WebRTC audio session and Realtime control channel state.</p>
-              </div>
-              <div class="hud-panel-soft clip-path-chamfer-lg p-5">
-                <p class="text-[10px] font-label tracking-[0.2em] text-primary/60">{copy["model"].upper()}</p>
-                <p class="mt-2 text-lg font-headline tracking-[0.12em] text-on-background">{model}</p>
-                <p class="mt-2 text-sm text-on-surface-variant">Realtime model used for the local wake-up voice session.</p>
-              </div>
-              <div class="hud-panel-soft clip-path-chamfer-lg p-5">
-                <p class="text-[10px] font-label tracking-[0.2em] text-primary/60">{copy["voice"].upper()}</p>
-                <p class="mt-2 text-lg font-headline tracking-[0.12em] text-on-background">{voice}</p>
-                <p class="mt-2 text-sm text-on-surface-variant">Configured output voice for the current session.</p>
-              </div>
-            </div>
-          </div>
-        </section>
+<section class="grid grid-cols-2 md:grid-cols-4 gap-2">
+<div class="hud-panel clip-path-chamfer-lg p-3">
+<p class="text-2xs font-label tracking-widest text-primary/40">{copy["assistant"].upper()}</p>
+<p class="mt-1 text-sm font-headline tracking-wider text-on-background">{assistant_name}</p>
+</div>
+<div class="hud-panel clip-path-chamfer-lg p-3">
+<p class="text-2xs font-label tracking-widest text-primary/40">{copy["session"].upper()}</p>
+<p id="connectionState" class="mt-1 text-sm font-headline tracking-wider text-on-background">BOOTING</p>
+</div>
+<div class="hud-panel clip-path-chamfer-lg p-3">
+<p class="text-2xs font-label tracking-widest text-primary/40">{copy["model"].upper()}</p>
+<p class="mt-1 text-sm font-headline tracking-wider text-on-background">{model}</p>
+</div>
+<div class="hud-panel clip-path-chamfer-lg p-3">
+<p class="text-2xs font-label tracking-widest text-primary/40">{copy["voice"].upper()}</p>
+<p class="mt-1 text-sm font-headline tracking-wider text-on-background">{voice}</p>
+</div>
+</section>
 
-        <section class="flex flex-col gap-6">
-          <div class="hud-panel clip-path-chamfer-lg p-5">
-            <div class="flex items-center justify-between gap-4 mb-5">
-              <div>
-                <p class="text-[10px] font-label tracking-[0.2em] text-primary/60">SESSION_CONTEXT</p>
-                <h2 class="mt-1 text-xl font-headline tracking-[0.12em] text-on-background">{copy["prompt"]}</h2>
-              </div>
-              <span class="material-symbols-outlined text-primary/70 text-3xl">notes</span>
-            </div>
-            <div class="space-y-4">
-              <div>
-                <p class="text-[10px] font-label tracking-[0.18em] text-primary/60">{copy["user"].upper()}</p>
-                <p class="mt-1 text-sm font-headline tracking-[0.14em] text-on-background">{welcome_name or "-"}</p>
-              </div>
-              <div>
-                <p class="text-[10px] font-label tracking-[0.18em] text-primary/60">{copy["prompt"].upper()}</p>
-                <p class="mt-1 text-sm text-on-surface-variant leading-6">{prompt_preview}</p>
-              </div>
-            </div>
-          </div>
+<section class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+<div class="hud-panel clip-path-chamfer-lg p-4">
+<div class="flex items-center justify-between gap-3 mb-3">
+<div>
+<p class="text-2xs font-label tracking-widest text-primary/40">SESSION_CONTEXT</p>
+<h2 class="mt-1 text-sm font-headline tracking-wide text-on-background">{copy["prompt"]}</h2>
+</div>
+<span class="material-symbols-outlined text-primary/50 text-lg">notes</span>
+</div>
+<div class="space-y-2.5">
+<div>
+<p class="text-2xs font-label tracking-widest text-primary/40">{copy["user"].upper()}</p>
+<p class="mt-0.5 text-xs font-headline tracking-wider text-on-background">{welcome_name or "-"}</p>
+</div>
+<div>
+<p class="text-2xs font-label tracking-widest text-primary/40">{copy["prompt"].upper()}</p>
+<p class="mt-0.5 text-xs text-on-surface-variant leading-relaxed">{prompt_preview}</p>
+</div>
+</div>
+</div>
 
-          <div class="hud-panel clip-path-chamfer-lg p-5 min-h-[22rem] flex flex-col">
-            <div class="flex items-center justify-between gap-4 mb-5">
-              <div>
-                <p class="text-[10px] font-label tracking-[0.2em] text-primary/60">EVENT_STREAM</p>
-                <h2 class="mt-1 text-xl font-headline tracking-[0.12em] text-on-background">{copy["events"]}</h2>
-              </div>
-              <span class="material-symbols-outlined text-primary/70 text-3xl">terminal</span>
-            </div>
-            <div class="flex-1 min-h-0 overflow-hidden">
-              <pre id="log" class="hud-log h-full"></pre>
-            </div>
-          </div>
-        </section>
-      </div>
-    </main>
-    <script src="/app.js" type="module"></script>
-  </body>
+<div class="hud-panel clip-path-chamfer-lg p-4 min-h-[18rem] flex flex-col">
+<div class="flex items-center justify-between gap-3 mb-3">
+<div>
+<p class="text-2xs font-label tracking-widest text-primary/40">EVENT_STREAM</p>
+<h2 class="mt-1 text-sm font-headline tracking-wide text-on-background">{copy["events"]}</h2>
+</div>
+<span class="material-symbols-outlined text-primary/50 text-lg">terminal</span>
+</div>
+<div class="flex-1 min-h-0 overflow-hidden">
+<pre id="log" class="hud-log h-full"></pre>
+</div>
+</div>
+</section>
+
+</div>
+</main>
+
+<nav class="fixed bottom-3 left-1/2 -translate-x-1/2 z-50 hud-dock clip-path-chamfer-lg px-3 py-1.5 flex items-center gap-1">
+<button id="connectButton" class="flex flex-col items-center px-4 py-1 text-primary/40 hover:text-primary hover:bg-primary/5 transition-colors" title="{copy["connect"]}">
+<span class="material-symbols-outlined text-lg">power</span>
+<span class="text-2xs font-headline tracking-widest mt-0.5">{copy["connect"].upper()}</span>
+</button>
+<div class="w-px h-8 bg-outline-variant/20 mx-1"></div>
+<button id="disconnectButton" class="flex flex-col items-center px-4 py-1 text-error/40 hover:text-error hover:bg-error/5 transition-colors" title="{copy["disconnect"]}">
+<span class="material-symbols-outlined text-lg">power_off</span>
+<span class="text-2xs font-headline tracking-widest mt-0.5">{copy["disconnect"].upper()}</span>
+</button>
+</nav>
+
+<script src="/app.js" type="module"></script>
+</body>
 </html>
 """
 
@@ -445,90 +451,67 @@ def build_styles_css() -> str:
     return """
 :root {
   color-scheme: dark;
-  --surface: #0a0e14;
-  --surface-container: #151a21;
-  --surface-container-low: #0f141a;
-  --surface-container-highest: #20262f;
-  --surface-variant: #20262f;
-  --outline-variant: #44484f;
-  --primary: #81ecff;
-  --secondary: #ff7350;
-  --tertiary: #c2ff99;
-  --on-background: #f1f3fc;
-  --on-surface-variant: #a8abb3;
-  --error: #ff716c;
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; min-height: 100%; }
-body {
-  font-family: Inter, sans-serif;
-  background: var(--surface);
-  color: var(--on-background);
-}
-.font-headline { font-family: "Space Grotesk", sans-serif; }
-.font-body { font-family: Inter, sans-serif; }
-.font-label { font-family: "Space Grotesk", sans-serif; }
+
 .clip-path-chamfer-lg {
-  clip-path: polygon(0 0, 95% 0, 100% 5%, 100% 100%, 5% 100%, 0 95%);
+  clip-path: polygon(0 0, 97% 0, 100% 3%, 100% 100%, 3% 100%, 0 97%);
 }
 .grid-bg {
   background-image:
-    linear-gradient(to right, rgba(129, 236, 255, 0.05) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(129, 236, 255, 0.05) 1px, transparent 1px);
+    linear-gradient(to right, rgba(129,236,255,0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(129,236,255,0.04) 1px, transparent 1px);
   background-size: 40px 40px;
 }
 .scanline {
-  background: linear-gradient(to bottom, transparent 50%, rgba(129, 236, 255, 0.02) 50%);
+  background: linear-gradient(to bottom, transparent 50%, rgba(129,236,255,0.015) 50%);
   background-size: 100% 4px;
 }
 @keyframes pulse-ring {
-  0% { transform: scale(0.8); opacity: 0.5; }
-  100% { transform: scale(1.5); opacity: 0; }
+  0%   { transform: scale(0.85); opacity: 0.4; }
+  100% { transform: scale(1.6); opacity: 0; }
 }
 .animate-pulse-ring {
-  animation: pulse-ring 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  animation: pulse-ring 3.5s cubic-bezier(0.4,0,0.6,1) infinite;
 }
-.bg-background { background-color: var(--surface); }
-.text-on-background { color: var(--on-background); }
-.text-on-surface-variant { color: var(--on-surface-variant); }
-.text-primary { color: var(--primary); }
-.text-error { color: var(--error); }
-.border-primary { border-color: rgba(129,236,255,0.2); }
+.radial-glow {
+  background: radial-gradient(circle, rgba(129,236,255,0.18) 0%, transparent 70%);
+}
 .hud-chip {
-  background: rgba(129,236,255,0.08);
-  border: 1px solid rgba(129,236,255,0.12);
+  background: rgba(129,236,255,0.06);
+  border: 1px solid rgba(68,72,79,0.18);
 }
 .hud-panel {
   background:
-    linear-gradient(180deg, rgba(129,236,255,0.10), rgba(129,236,255,0.00) 24%),
-    rgba(15, 20, 26, 0.72);
+    linear-gradient(180deg, rgba(129,236,255,0.08), rgba(129,236,255,0.00) 22%),
+    rgba(15,20,26,0.72);
   backdrop-filter: blur(18px);
-  border: 1px solid rgba(129,236,255,0.14);
+  border: 1px solid rgba(68,72,79,0.20);
 }
-.hud-panel-soft {
-  background:
-    linear-gradient(180deg, rgba(129,236,255,0.06), rgba(129,236,255,0.00) 22%),
-    rgba(15, 20, 26, 0.58);
-  backdrop-filter: blur(16px);
-  border: 1px solid rgba(129,236,255,0.10);
+.hud-dock {
+  background: linear-gradient(0deg, rgba(10,14,20,0.92), rgba(129,236,255,0.06));
+  backdrop-filter: blur(24px);
+  border: 1px solid rgba(68,72,79,0.22);
+  box-shadow: 0 -2px 30px rgba(129,236,255,0.05);
 }
 .hud-log {
   margin: 0;
   overflow: auto;
   white-space: pre-wrap;
   font-family: "SF Mono", "Menlo", monospace;
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1.6;
-  color: var(--on-background);
+  color: #f1f3fc;
   background: rgba(0,0,0,0.18);
-  border: 1px solid rgba(129,236,255,0.08);
-  padding: 16px;
+  border: 1px solid rgba(68,72,79,0.15);
+  padding: 0.75rem;
   height: 100%;
-  max-height: 26rem;
+  max-height: 22rem;
 }
-.hud-log::-webkit-scrollbar { width: 8px; height: 8px; }
-.hud-log::-webkit-scrollbar-thumb { background: rgba(129,236,255,0.18); }
-    """
+.hud-log::-webkit-scrollbar       { width: 6px; height: 6px; }
+.hud-log::-webkit-scrollbar-thumb { background: rgba(129,236,255,0.15); }
+"""
 
 
 def build_app_js(server: RealtimeWelcomeServer) -> str:
