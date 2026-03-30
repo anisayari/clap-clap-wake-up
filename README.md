@@ -79,9 +79,12 @@ clap-wake dashboard
 clap-wake tray
 clap-wake calibrate
 clap-wake status
+clap-cake help
 clap-wake install-autostart
 clap-wake uninstall-autostart
 ```
+
+`clap-cake` is a convenience alias for `clap-wake`, so `clap-cake help` works as a simple entrypoint.
 
 ## Setup Flow
 

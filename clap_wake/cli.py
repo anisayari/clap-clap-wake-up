@@ -31,6 +31,7 @@ def build_parser(default_config: Path) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Double-clap wake-up daemon", parents=[common])
 
     subparsers = parser.add_subparsers(dest="command", required=True)
+    subparsers.add_parser("help", help="Show command help", parents=[common])
     subparsers.add_parser("setup", help="Interactive setup", parents=[common])
     subparsers.add_parser("status", help="Print current config", parents=[common])
     subparsers.add_parser("detect-targets", help="Scan local paths/commands for known targets", parents=[common])
@@ -62,7 +63,18 @@ def main(argv: list[str] | None = None) -> int:
     known_args, _ = pre_parser.parse_known_args(argv)
 
     parser = build_parser(default_config=known_args.config)
+    if argv is None:
+        import sys
+
+        argv = sys.argv[1:]
+    if not argv:
+        parser.print_help()
+        return 0
     args = parser.parse_args(argv)
+
+    if args.command == "help":
+        parser.print_help()
+        return 0
 
     if args.command == "setup":
         path = prompt_setup(config_path=args.config)

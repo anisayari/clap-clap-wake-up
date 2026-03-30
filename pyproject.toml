@@ -19,6 +19,7 @@ dependencies = [
 
 [project.scripts]
 clap-wake = "clap_wake.cli:main"
+clap-cake = "clap_wake.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["clap_wake*"]
