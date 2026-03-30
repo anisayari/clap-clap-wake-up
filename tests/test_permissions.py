@@ -1,9 +1,11 @@
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
 from clap_wake.permissions import (
     get_required_permission_keys,
     probe_accessibility_permission,
+    probe_microphone_permission,
     settings_command_for,
 )
 
@@ -44,6 +46,27 @@ class PermissionTests(unittest.TestCase):
 
         self.assertFalse(result.granted)
         self.assertTrue(result.can_open_settings)
+
+    def test_probe_microphone_permission_uses_selected_input_device(self) -> None:
+        captured: dict[str, object] = {}
+
+        class FakeInputStream:
+            def __init__(self, **kwargs) -> None:
+                captured.update(kwargs)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb) -> bool:
+                return False
+
+        fake_sounddevice = SimpleNamespace(InputStream=FakeInputStream)
+
+        with patch.dict("sys.modules", {"sounddevice": fake_sounddevice}):
+            result = probe_microphone_permission({"sample_rate": 16000, "blocksize": 512, "input_device": 9})
+
+        self.assertTrue(result.granted)
+        self.assertEqual(captured["device"], 9)
 
 
 if __name__ == "__main__":

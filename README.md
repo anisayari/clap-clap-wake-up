@@ -70,11 +70,14 @@ clap-wake setup
 clap-wake run
 ```
 
+YouTube URLs are cached locally as MP3 files through `yt-dlp`. The app can provision its own `ffmpeg` / `ffprobe` runtime automatically through the Python dependencies, so no separate system-wide install is required.
+
 ## Terminal Commands
 
 ```bash
 clap-wake setup
 clap-wake run
+clap-wake stop
 clap-wake dashboard
 clap-wake tray
 clap-wake calibrate
@@ -85,6 +88,8 @@ clap-wake uninstall-autostart
 ```
 
 `clap-cake` is a convenience alias for `clap-wake`, so `clap-cake help` works as a simple entrypoint.
+
+Use `clap-wake stop` to stop the currently running listener or dashboard instance from another terminal.
 
 ## Setup Flow
 
@@ -106,6 +111,8 @@ The interactive setup lets you:
   - a video URL
   - auto scan from `assets/audio`
   - no local media
+
+When you choose a YouTube URL, Clap Wake Up now downloads it to the local media cache as an MP3 on startup and reuses that cached file on later runs. The first download may take a bit longer because the bundled `ffmpeg` runtime may need to be provisioned once. Non-YouTube URLs still open in the browser.
 
 ## Launch Targets
 
@@ -153,6 +160,7 @@ If you enable `Localhost Welcome (OpenAI Realtime)`, a double clap can:
 - On Windows, autostart is installed in the Startup folder.
 - Clap detection depends on your mic and your environment, so calibration matters.
 - The media system can replay local MP3s, folders, URLs, or use a YouTube fallback.
+- YouTube URL caching uses bundled Python-managed `ffmpeg` / `ffprobe` tools when needed, so users do not need a separate manual install.
 - The default workspace created by setup is `working-directory-start-up/` and it is git-ignored.
 
 ## Open to Contributions

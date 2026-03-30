@@ -12,6 +12,7 @@ from .media import find_highway_mp3, list_audio_from_folder, pick_next_audio_fro
 from .player import Mp3Player
 from .realtime_localhost import ensure_realtime_server, stop_realtime_server
 from .window_layout import WindowBounds, plan_launch_layout
+from .youtube_cache import YouTubeCacheError, ensure_youtube_audio_cached, is_youtube_url
 
 
 class WakeService:
@@ -23,10 +24,13 @@ class WakeService:
         self._trigger_lock = Lock()
         self._stop_event = Event()
         self._last_action_at = 0.0
+        self._cached_url_audio_path: Path | None = None
+        self._cached_fallback_audio_path: Path | None = None
 
     def run_forever(self) -> None:
         self._stop_event.clear()
         self._prepare_realtime_if_needed()
+        self._prepare_media_cache_if_needed()
         clap_config = build_clap_config(self.config["microphone"])
         self.logger.info("Listening for double claps...")
         run_microphone_loop(clap_config, self.handle_trigger, stop_event=self._stop_event)
@@ -56,7 +60,12 @@ class WakeService:
             media_bounds = layout[target_count] if media_url and len(layout) > target_count else None
 
             self.launch_selected_targets(target_bounds=target_bounds)
-            self.play_media_only(mp3_path=mp3_path, media_url=media_url, bounds=media_bounds)
+            self.play_media_only(
+                mp3_path=mp3_path,
+                media_url=media_url,
+                bounds=media_bounds,
+                resolve_when_empty=False,
+            )
         finally:
             self._trigger_lock.release()
 
@@ -65,8 +74,9 @@ class WakeService:
         mp3_path: Path | None = None,
         media_url: str | None = None,
         bounds: WindowBounds | None = None,
+        resolve_when_empty: bool = True,
     ) -> None:
-        if mp3_path is None and media_url is None:
+        if mp3_path is None and media_url is None and resolve_when_empty:
             mp3_path, media_url = self.resolve_media_action()
 
         if mp3_path:
@@ -163,6 +173,72 @@ class WakeService:
             return
         self.logger.info("Realtime localhost prewarmed on %s", url)
 
+    def _prepare_media_cache_if_needed(self) -> None:
+        media = self.config.get("media", {})
+        self._cached_fallback_audio_path = None
+        if media.get("mode") != "url":
+            self._cached_url_audio_path = None
+        else:
+            selected_url = str(media.get("selected_url") or "").strip()
+            if not selected_url or not is_youtube_url(selected_url):
+                self._cached_url_audio_path = None
+            else:
+                self._cached_url_audio_path = self._cache_youtube_audio(selected_url, context="selected media")
+
+        if self._should_prefetch_fallback_audio(media):
+            fallback_url = self._fallback_media_url()
+            if fallback_url and is_youtube_url(fallback_url):
+                self._cached_fallback_audio_path = self._cache_youtube_audio(
+                    fallback_url,
+                    context="fallback media",
+                )
+
+    def _cache_youtube_audio(self, url: str, context: str) -> Path | None:
+        try:
+            cached_path = ensure_youtube_audio_cached(url)
+        except YouTubeCacheError as exc:
+            self.logger.warning("Unable to prefetch %s cache: %s", context, exc)
+            return None
+        self.logger.info("YouTube audio cached for %s at %s", context, cached_path)
+        return cached_path
+
+    def _should_prefetch_fallback_audio(self, media: dict) -> bool:
+        if media.get("mode") == "none":
+            return False
+        if self._primary_media_path(media) is not None:
+            return False
+        if media.get("mode") == "url" and str(media.get("selected_url") or "").strip():
+            return False
+        return True
+
+    def _primary_media_path(self, media: dict) -> Path | None:
+        mode = media.get("mode", "auto_downloads")
+        if mode == "single_file":
+            selected_sound = media.get("selected_sound_path")
+            if selected_sound:
+                path = Path(selected_sound).expanduser()
+                if path.exists():
+                    return path
+            return None
+
+        if mode == "folder_random":
+            folder = media.get("selected_folder_path")
+            return pick_random_audio_from_folder(folder) if folder else None
+
+        if mode == "auto_downloads":
+            selected_sound = media.get("selected_sound_path")
+            if selected_sound:
+                path = Path(selected_sound).expanduser()
+                if path.exists():
+                    return path
+            downloads_dir = media.get("selected_folder_path") or media.get("downloads_dir")
+            return find_highway_mp3(downloads_dir)
+
+        return None
+
+    def _fallback_media_url(self) -> str:
+        return str(self.config.get("media", {}).get("youtube_fallback_url", YOUTUBE_FALLBACK_URL) or "").strip()
+
     def music_volume(self) -> float:
         media = self.config.get("media", {})
         default = 0.24
@@ -201,6 +277,15 @@ class WakeService:
         if mode == "url":
             selected_url = media.get("selected_url")
             if selected_url:
+                if self._cached_url_audio_path and self._cached_url_audio_path.exists():
+                    return self._cached_url_audio_path, None
+                if is_youtube_url(selected_url):
+                    try:
+                        self._cached_url_audio_path = ensure_youtube_audio_cached(selected_url)
+                    except YouTubeCacheError as exc:
+                        self.logger.warning("Unable to use YouTube audio cache for %s: %s", selected_url, exc)
+                    else:
+                        return self._cached_url_audio_path, None
                 return None, selected_url
 
         if mode == "none":
@@ -213,4 +298,16 @@ class WakeService:
                 return path, None
 
         downloads_dir = media.get("selected_folder_path") or media.get("downloads_dir")
-        return find_highway_mp3(downloads_dir), None
+        path = find_highway_mp3(downloads_dir)
+        if path is not None:
+            return path, None
+
+        fallback_url = self._fallback_media_url()
+        if self._cached_fallback_audio_path and self._cached_fallback_audio_path.exists():
+            return self._cached_fallback_audio_path, None
+        if fallback_url and is_youtube_url(fallback_url):
+            cached_fallback = self._cache_youtube_audio(fallback_url, context="fallback media")
+            if cached_fallback is not None:
+                self._cached_fallback_audio_path = cached_fallback
+                return cached_fallback, None
+        return None, None

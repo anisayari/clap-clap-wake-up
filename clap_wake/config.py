@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import json
 import os
 import re
@@ -52,11 +53,13 @@ AVAILABLE_TARGETS = [
 ]
 
 DEFAULT_CONFIG: dict[str, Any] = {
-    "version": 7,
+    "version": 8,
     "language": DEFAULT_LANGUAGE,
     "workspace_dir": None,
     "selected_targets": [],
     "microphone": {
+        "input_device": None,
+        "input_device_name": None,
         "sample_rate": 16000,
         "blocksize": 512,
         "absolute_peak_threshold": 0.22,
@@ -191,6 +194,17 @@ TEXTS = {
         "folder_scan_choice": "Numero du fichier a importer : ",
         "folder_scan_one": "Choisis un seul numero.",
         "file_picker_none": "Aucun fichier choisi.",
+        "microphone_title": "🎙️ Choix du micro",
+        "microphone_current": "Micro actuel: {value}",
+        "microphone_hint": "Choisis le micro a utiliser pour la verification, la calibration et l'ecoute.",
+        "microphone_selector": "Utilise ↑ ↓ puis Entree pour choisir le micro.",
+        "microphone_selector_title": "🎙️ Micro du double clap",
+        "microphone_default_tag": "par defaut",
+        "microphone_auto_selected": "🎙️ Un seul micro detecte, selection automatique: {value}",
+        "microphone_none_detected": "Aucun micro d'entree detecte, on gardera le micro par defaut du systeme.",
+        "microphone_keep_current": "Entrer garde le micro actuel: {selection}",
+        "microphone_invalid": "Choix invalide. Entre un numero de la liste.",
+        "microphone_selected": "🎙️ Micro selectionne: {value}",
         "trigger_title": "🎚️  Reglage du declenchement",
         "trigger_prompt": "🎚️  Temps mini entre deux declenchements complets, en secondes [{default}] : ",
         "trigger_number": "Entre un nombre valide, par exemple 2 ou 1.5.",
@@ -288,6 +302,17 @@ TEXTS = {
         "folder_scan_choice": "File number to import : ",
         "folder_scan_one": "Choose exactly one number.",
         "file_picker_none": "No file selected.",
+        "microphone_title": "🎙️ Microphone selection",
+        "microphone_current": "Current microphone: {value}",
+        "microphone_hint": "Choose the microphone to use for permission checks, calibration, and listening.",
+        "microphone_selector": "Use ↑ ↓ then Enter to choose the microphone.",
+        "microphone_selector_title": "🎙️ Double clap microphone",
+        "microphone_default_tag": "default",
+        "microphone_auto_selected": "🎙️ Only one microphone detected, auto-selected: {value}",
+        "microphone_none_detected": "No input microphone was detected, so the system default microphone will be used.",
+        "microphone_keep_current": "Press Enter to keep the current microphone: {selection}",
+        "microphone_invalid": "Invalid choice. Enter a number from the list.",
+        "microphone_selected": "🎙️ Selected microphone: {value}",
         "trigger_title": "🎚️  Trigger tuning",
         "trigger_prompt": "🎚️  Minimum time between full triggers, in seconds [{default}] : ",
         "trigger_number": "Enter a valid number, for example 2 or 1.5.",
@@ -583,6 +608,185 @@ def choose_language(default_language: str | None) -> str:
     return current if current in {"fr", "en"} else DEFAULT_LANGUAGE
 
 
+def _configured_input_device_index(microphone: dict[str, Any]) -> int | None:
+    raw = microphone.get("input_device")
+    if raw in {None, ""}:
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def _default_input_device_index(sd: Any) -> int | None:
+    default_device = getattr(getattr(sd, "default", None), "device", None)
+    if isinstance(default_device, (list, tuple)):
+        candidate = default_device[0] if default_device else None
+    else:
+        candidate = default_device
+    if candidate in {None, -1}:
+        return None
+    try:
+        return int(candidate)
+    except (TypeError, ValueError):
+        return None
+
+
+def list_input_microphones() -> list[dict[str, Any]]:
+    try:
+        sd = importlib.import_module("sounddevice")
+    except ImportError:
+        return []
+
+    try:
+        raw_devices = sd.query_devices()
+    except Exception:
+        return []
+
+    try:
+        hostapi_names = [str(item.get("name") or "") for item in sd.query_hostapis()]
+    except Exception:
+        hostapi_names = []
+
+    default_index = _default_input_device_index(sd)
+    microphones: list[dict[str, Any]] = []
+    for index, device in enumerate(raw_devices):
+        max_input_channels = int(device.get("max_input_channels", 0) or 0)
+        if max_input_channels < 1:
+            continue
+
+        hostapi_name = ""
+        try:
+            hostapi_index = int(device.get("hostapi", -1))
+        except (TypeError, ValueError):
+            hostapi_index = -1
+        if 0 <= hostapi_index < len(hostapi_names):
+            hostapi_name = hostapi_names[hostapi_index]
+
+        microphones.append(
+            {
+                "index": index,
+                "name": str(device.get("name") or f"Input {index}"),
+                "hostapi_name": hostapi_name,
+                "is_default": index == default_index,
+            }
+        )
+    return microphones
+
+
+def format_microphone_label(device: dict[str, Any], language: str) -> str:
+    label = str(device.get("name") or f"Input {device.get('index', '?')}")
+    hostapi_name = str(device.get("hostapi_name") or "")
+    if hostapi_name:
+        label = f"{label} ({hostapi_name})"
+    if device.get("is_default"):
+        label = f"{label} [{t(language, 'microphone_default_tag')}]"
+    return label
+
+
+def describe_configured_microphone(microphone: dict[str, Any]) -> str | None:
+    name = microphone.get("input_device_name")
+    device_index = _configured_input_device_index(microphone)
+    if name and device_index is not None:
+        return f"{name} ({device_index})"
+    if name:
+        return str(name)
+    if device_index is not None:
+        return str(device_index)
+    return None
+
+
+def _set_selected_microphone(microphone: dict[str, Any], device: dict[str, Any]) -> None:
+    microphone["input_device"] = int(device["index"])
+    microphone["input_device_name"] = str(device.get("name") or f"Input {device['index']}")
+
+
+def _default_microphone_choice(
+    microphone: dict[str, Any], devices: list[dict[str, Any]]
+) -> dict[str, Any]:
+    configured_index = _configured_input_device_index(microphone)
+    if configured_index is not None:
+        for device in devices:
+            if int(device["index"]) == configured_index:
+                return device
+    for device in devices:
+        if device.get("is_default"):
+            return device
+    return devices[0]
+
+
+def prompt_for_microphone_selection(config: dict[str, Any], language: str) -> None:
+    microphone = config["microphone"]
+    devices = list_input_microphones()
+
+    print()
+    print(t(language, "microphone_title"))
+    print()
+
+    current = describe_configured_microphone(microphone)
+    if current:
+        print(t(language, "microphone_current", value=current))
+
+    if not devices:
+        microphone["input_device"] = None
+        microphone["input_device_name"] = None
+        print(t(language, "microphone_none_detected"))
+        return
+
+    if len(devices) == 1:
+        selected = devices[0]
+        _set_selected_microphone(microphone, selected)
+        print(t(language, "microphone_auto_selected", value=format_microphone_label(selected, language)))
+        return
+
+    default_device = _default_microphone_choice(microphone, devices)
+    print(t(language, "microphone_hint"))
+    print()
+
+    if terminal_ui_available():
+        selected_index = inline_single_select(
+            title=t(language, "microphone_selector_title"),
+            hint=t(language, "microphone_selector"),
+            options=[
+                (str(device["index"]), format_microphone_label(device, language))
+                for device in devices
+            ],
+            default_value=str(default_device["index"]),
+        )
+        if selected_index is not None:
+            selected = next(
+                (device for device in devices if str(device["index"]) == selected_index),
+                default_device,
+            )
+            _set_selected_microphone(microphone, selected)
+            print(t(language, "microphone_selected", value=format_microphone_label(selected, language)))
+            return
+        print()
+        print(t(language, "selector_fallback"))
+        print()
+
+    for display_index, device in enumerate(devices, start=1):
+        print(f"  {display_index}. {format_microphone_label(device, language)}")
+    print()
+    print(t(language, "microphone_keep_current", selection=format_microphone_label(default_device, language)))
+    print()
+
+    while True:
+        raw = input("> ").strip()
+        if not raw:
+            selected = default_device
+            break
+        if raw.isdigit():
+            choice = int(raw)
+            if 1 <= choice <= len(devices):
+                selected = devices[choice - 1]
+                break
+        print(t(language, "microphone_invalid"))
+
+    _set_selected_microphone(microphone, selected)
+    print(t(language, "microphone_selected", value=format_microphone_label(selected, language)))
+
+
 def get_default_welcome_prompt(language: str) -> str:
     if language == "en":
         return "Welcome me with energy in English, then ask for my first goal of the session."
@@ -714,6 +918,7 @@ def prompt_setup(config_path: Path | None = None) -> Path:
 
     config["selected_targets"] = selected_targets
     config["media"]["library_dir"] = str(get_media_library_dir())
+    prompt_for_microphone_selection(config, language)
     prompt_for_permissions(config, language)
     prompt_for_media(config, language)
     prompt_for_clap_calibration(config, language)
@@ -1029,6 +1234,8 @@ def migrate_config(config: dict[str, Any]) -> None:
         media["mode"] = "auto_downloads"
     if "downloads_dir" in media and not media.get("selected_folder_path"):
         media["selected_folder_path"] = media.get("downloads_dir")
+    if media.get("selected_url") and not media.get("selected_sound_path") and media.get("mode") != "url":
+        media["mode"] = "url"
 
     if config.get("version", 1) < 4 and microphone.get("trigger_cooldown_seconds") == 8.0:
         microphone["trigger_cooldown_seconds"] = 2.0
@@ -1335,6 +1542,8 @@ def build_clap_config(microphone: dict[str, Any]) -> ClapConfig:
             float(microphone["double_clap_max_gap_seconds"]),
             fallback=float(microphone.get("trigger_cooldown_seconds", 2.0)),
         ),
+        input_device=_configured_input_device_index(microphone),
+        input_device_name=microphone.get("input_device_name") or None,
         profile=profile,
     )
 

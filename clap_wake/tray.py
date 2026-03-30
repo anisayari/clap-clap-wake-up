@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import logging
+import os
 import sys
 import threading
 from pathlib import Path
 
 from .config import get_app_home, load_config, run_clap_calibration, save_config
 from .launcher import launch_terminal_command, open_directory_background, open_file_background
+from .runtime_control import clear_runtime_state, register_runtime
 from .service import WakeService
 from .sound_library import get_media_library_dir
 
@@ -175,7 +177,11 @@ class TrayApplication:
 
 def run_tray(config_path: Path) -> int:
     app = TrayApplication(config_path=config_path)
-    return app.run()
+    register_runtime("tray", config_path=config_path, pid=os.getpid())
+    try:
+        return app.run()
+    finally:
+        clear_runtime_state(expected_pid=os.getpid())
 
 
 def create_tray_image():

@@ -1,3 +1,5 @@
+from threading import Event
+from types import SimpleNamespace
 import unittest
 
 import numpy as np
@@ -5,12 +7,14 @@ import numpy as np
 from clap_wake.audio import (
     ClapFeatures,
     DoubleClapSample,
+    ClapConfig,
     build_double_clap_profile,
     extract_clap_features,
     matches_double_clap,
     matches_single_clap,
     profile_from_dict,
     profile_to_dict,
+    run_microphone_loop,
 )
 
 
@@ -76,6 +80,38 @@ class AudioProfileTests(unittest.TestCase):
         self.assertTrue(matches_single_clap(similar_first, profile))
         self.assertTrue(matches_double_clap(similar_first, similar_second, 0.3, profile))
         self.assertFalse(matches_single_clap(unrelated, profile))
+
+    def test_run_microphone_loop_passes_selected_input_device(self) -> None:
+        captured: dict[str, object] = {}
+
+        class FakeInputStream:
+            def __init__(self, **kwargs) -> None:
+                captured.update(kwargs)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb) -> bool:
+                return False
+
+        config = ClapConfig(
+            sample_rate=16000,
+            blocksize=512,
+            absolute_peak_threshold=0.22,
+            relative_peak_multiplier=5.5,
+            minimum_clap_gap_seconds=0.12,
+            double_clap_max_gap_seconds=0.85,
+            trigger_cooldown_seconds=2.0,
+            input_device=7,
+        )
+        stop_event = Event()
+        stop_event.set()
+        fake_sounddevice = SimpleNamespace(InputStream=FakeInputStream)
+
+        with unittest.mock.patch.dict("sys.modules", {"sounddevice": fake_sounddevice}):
+            run_microphone_loop(config, lambda: None, stop_event=stop_event)
+
+        self.assertEqual(captured["device"], 7)
 
 
 if __name__ == "__main__":

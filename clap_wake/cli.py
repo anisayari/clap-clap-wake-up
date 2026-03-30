@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import signal
 from pathlib import Path
 
@@ -17,6 +18,7 @@ from .config import (
 )
 from .discovery import detect_known_targets
 from .launcher import launch_dashboard_terminal
+from .runtime_control import clear_runtime_state, register_runtime, request_runtime_stop
 from .service import WakeService
 
 
@@ -37,6 +39,7 @@ def build_parser(default_config: Path) -> argparse.ArgumentParser:
     subparsers.add_parser("detect-targets", help="Scan local paths/commands for known targets", parents=[common])
     subparsers.add_parser("calibrate", help="Calibrate clap signature", parents=[common])
     subparsers.add_parser("run", help="Run the background listener", parents=[common])
+    subparsers.add_parser("stop", help="Stop the running listener or dashboard", parents=[common])
     subparsers.add_parser("dashboard", help="Run the listener with the local dashboard", parents=[common])
     subparsers.add_parser("tray", help="Run the tray app", parents=[common])
     subparsers.add_parser("install-autostart", help="Install login auto-start", parents=[common])
@@ -101,6 +104,11 @@ def main(argv: list[str] | None = None) -> int:
         print_detected_targets()
         return 0
 
+    if args.command == "stop":
+        stopped, message = request_runtime_stop()
+        print(message)
+        return 0 if stopped else 1
+
     if args.command == "calibrate":
         try:
             config = load_config(args.config)
@@ -161,6 +169,7 @@ def main(argv: list[str] | None = None) -> int:
         interrupted = False
         previous_sigint = signal.getsignal(signal.SIGINT)
         previous_sigterm = signal.getsignal(signal.SIGTERM)
+        register_runtime("run", args.config)
 
         def shutdown_handler(signum, frame) -> None:
             del frame
@@ -176,6 +185,7 @@ def main(argv: list[str] | None = None) -> int:
             interrupted = True
         finally:
             service.stop()
+            clear_runtime_state(expected_pid=os.getpid())
             signal.signal(signal.SIGINT, previous_sigint)
             signal.signal(signal.SIGTERM, previous_sigterm)
 

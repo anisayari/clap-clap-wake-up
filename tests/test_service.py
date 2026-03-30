@@ -5,6 +5,7 @@ from unittest.mock import ANY, patch
 
 from clap_wake.config import DEFAULT_CONFIG
 from clap_wake.service import WakeService
+from clap_wake.youtube_cache import YouTubeCacheError
 
 
 class WakeServiceTests(unittest.TestCase):
@@ -20,10 +21,12 @@ class WakeServiceTests(unittest.TestCase):
         return config
 
     @patch("clap_wake.service.find_highway_mp3", return_value=None)
+    @patch("clap_wake.service.ensure_youtube_audio_cached", side_effect=YouTubeCacheError("cache unavailable"))
     @patch("clap_wake.service.open_url_foreground")
     def test_fallback_opens_youtube_when_mp3_missing(
         self,
         open_url_mock,
+        cache_mock,
         find_mp3_mock,
     ) -> None:
         del find_mp3_mock
@@ -32,17 +35,64 @@ class WakeServiceTests(unittest.TestCase):
         service.handle_trigger()
 
         open_url_mock.assert_called_once()
+        cache_mock.assert_called_once()
+
+    @patch("clap_wake.service.ensure_youtube_audio_cached", return_value=Path("/tmp/fallback-cache.mp3"))
+    @patch("clap_wake.service.find_highway_mp3", return_value=None)
+    def test_auto_downloads_prefers_cached_youtube_fallback_when_local_mp3_missing(
+        self,
+        find_mp3_mock,
+        cache_mock,
+    ) -> None:
+        del find_mp3_mock
+        config = self.build_config()
+        config["media"]["mode"] = "auto_downloads"
+        config["media"]["selected_folder_path"] = "/tmp/empty"
+        config["media"]["youtube_fallback_url"] = "https://youtube.com/watch?v=abc123XYZ_0"
+        service = WakeService(config=config, project_dir=Path("/tmp"))
+
+        mp3_path, media_url = service.resolve_media_action()
+
+        self.assertEqual(mp3_path, Path("/tmp/fallback-cache.mp3"))
+        self.assertIsNone(media_url)
+        cache_mock.assert_called_once_with("https://youtube.com/watch?v=abc123XYZ_0")
 
     @patch("clap_wake.service.open_url_foreground")
     def test_direct_media_url_opens_url(self, open_url_mock) -> None:
         config = self.build_config()
         config["media"]["mode"] = "url"
-        config["media"]["selected_url"] = "https://youtube.com/watch?v=test"
+        config["media"]["selected_url"] = "https://example.com/soundtrack"
         service = WakeService(config=config, project_dir=Path("/tmp"))
 
         service.handle_trigger()
 
-        open_url_mock.assert_called_once_with("https://youtube.com/watch?v=test", bounds=ANY)
+        open_url_mock.assert_called_once_with("https://example.com/soundtrack", bounds=ANY)
+
+    @patch("clap_wake.service.ensure_youtube_audio_cached", return_value=Path("/tmp/cached-youtube.mp3"))
+    def test_youtube_media_url_prefers_cached_mp3(self, cache_mock) -> None:
+        config = self.build_config()
+        config["media"]["mode"] = "url"
+        config["media"]["selected_url"] = "https://youtube.com/watch?v=abc123XYZ_0"
+        service = WakeService(config=config, project_dir=Path("/tmp"))
+
+        mp3_path, media_url = service.resolve_media_action()
+
+        self.assertEqual(mp3_path, Path("/tmp/cached-youtube.mp3"))
+        self.assertIsNone(media_url)
+        cache_mock.assert_called_once_with("https://youtube.com/watch?v=abc123XYZ_0")
+
+    @patch("clap_wake.service.ensure_youtube_audio_cached", side_effect=YouTubeCacheError("ffmpeg missing"))
+    def test_youtube_media_url_falls_back_to_browser_when_cache_fails(self, cache_mock) -> None:
+        config = self.build_config()
+        config["media"]["mode"] = "url"
+        config["media"]["selected_url"] = "https://youtube.com/watch?v=abc123XYZ_0"
+        service = WakeService(config=config, project_dir=Path("/tmp"))
+
+        mp3_path, media_url = service.resolve_media_action()
+
+        self.assertIsNone(mp3_path)
+        self.assertEqual(media_url, "https://youtube.com/watch?v=abc123XYZ_0")
+        cache_mock.assert_called_once_with("https://youtube.com/watch?v=abc123XYZ_0")
 
     @patch("clap_wake.service.launch_target")
     @patch("clap_wake.service.ensure_realtime_server", return_value="http://127.0.0.1:8765/")
@@ -83,6 +133,46 @@ class WakeServiceTests(unittest.TestCase):
 
         ensure_server_mock.assert_called_once()
         run_loop_mock.assert_called_once()
+
+    @patch("clap_wake.service.run_microphone_loop")
+    @patch("clap_wake.service.ensure_youtube_audio_cached", return_value=Path("/tmp/cached-youtube.mp3"))
+    def test_run_forever_prefetches_youtube_audio_before_microphone_loop(
+        self,
+        cache_mock,
+        run_loop_mock,
+    ) -> None:
+        config = self.build_config()
+        config["media"]["mode"] = "url"
+        config["media"]["selected_url"] = "https://youtube.com/watch?v=abc123XYZ_0"
+        service = WakeService(config=config, project_dir=Path("/tmp"))
+
+        service.run_forever()
+
+        cache_mock.assert_called_once_with("https://youtube.com/watch?v=abc123XYZ_0")
+        run_loop_mock.assert_called_once()
+        self.assertEqual(service._cached_url_audio_path, Path("/tmp/cached-youtube.mp3"))
+
+    @patch("clap_wake.service.run_microphone_loop")
+    @patch("clap_wake.service.find_highway_mp3", return_value=None)
+    @patch("clap_wake.service.ensure_youtube_audio_cached", return_value=Path("/tmp/fallback-cache.mp3"))
+    def test_run_forever_prefetches_youtube_fallback_for_auto_downloads(
+        self,
+        cache_mock,
+        find_mp3_mock,
+        run_loop_mock,
+    ) -> None:
+        del find_mp3_mock
+        config = self.build_config()
+        config["media"]["mode"] = "auto_downloads"
+        config["media"]["selected_folder_path"] = "/tmp/empty"
+        config["media"]["youtube_fallback_url"] = "https://youtube.com/watch?v=abc123XYZ_0"
+        service = WakeService(config=config, project_dir=Path("/tmp"))
+
+        service.run_forever()
+
+        cache_mock.assert_called_once_with("https://youtube.com/watch?v=abc123XYZ_0")
+        run_loop_mock.assert_called_once()
+        self.assertEqual(service._cached_fallback_audio_path, Path("/tmp/fallback-cache.mp3"))
 
     def test_music_volume_is_lower_when_realtime_is_selected(self) -> None:
         config = self.build_config()
