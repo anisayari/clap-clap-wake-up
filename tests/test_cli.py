@@ -45,6 +45,21 @@ class CliTests(unittest.TestCase):
         self.assertEqual(rc, 1)
         print_mock.assert_called_once_with("No running instance found.")
 
+    def test_status_missing_config_prints_adaptive_setup_hint(self) -> None:
+        with patch("clap_wake.cli.load_config", side_effect=FileNotFoundError("missing config")):
+            with patch("clap_wake.cli.build_module_command", return_value="python -m clap_wake setup"):
+                with patch("builtins.print") as print_mock:
+                    rc = main(["status", "--config", str(Path("/tmp/config.json"))])
+
+        self.assertEqual(rc, 1)
+        self.assertEqual(
+            print_mock.call_args_list,
+            [
+                unittest.mock.call("missing config"),
+                unittest.mock.call("Lance `python -m clap_wake setup` pour creer la configuration."),
+            ],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -20,11 +20,40 @@ _SERVER_LOCK = threading.Lock()
 _SERVER_INSTANCE: "RealtimeWelcomeServer | None" = None
 
 
+def build_public_config(config: dict[str, Any]) -> dict[str, Any]:
+    realtime = config.get("realtime", {})
+    language = config.get("language", DEFAULT_LANGUAGE)
+    return {
+        "language": language,
+        "model": realtime.get("model", "gpt-realtime"),
+        "voice": realtime.get("voice", "marin"),
+        "assistant_name": realtime.get("assistant_name", "Jarvis"),
+        "welcome_name": realtime.get("welcome_name", ""),
+        "welcome_prompt": realtime.get(
+            "welcome_prompt",
+            get_default_welcome_prompt(language),
+        ),
+    }
+
+
+def build_welcome_url(base_url: str) -> str:
+    return f"{base_url.rstrip('/')}/welcome/"
+
+
+def normalize_route_prefix(route_prefix: str) -> str:
+    prefix = route_prefix.strip()
+    if not prefix:
+        return ""
+    prefix = "/" + prefix.strip("/")
+    return prefix
+
+
 def ensure_realtime_server(config: dict[str, Any]) -> str:
     global _SERVER_INSTANCE
 
     realtime_config = config.get("realtime", {})
-    preferred_port = int(realtime_config.get("port", 8765))
+    dashboard_config = config.get("dashboard", {})
+    preferred_port = int(dashboard_config.get("port") or realtime_config.get("port") or 8766)
 
     with _SERVER_LOCK:
         if _SERVER_INSTANCE is not None and _SERVER_INSTANCE.port == preferred_port:
@@ -155,19 +184,7 @@ class RealtimeWelcomeServer:
         return Handler
 
     def public_config(self) -> dict[str, Any]:
-        realtime = self.config.get("realtime", {})
-        language = self.config.get("language", DEFAULT_LANGUAGE)
-        return {
-            "language": language,
-            "model": realtime.get("model", "gpt-realtime"),
-            "voice": realtime.get("voice", "marin"),
-            "assistant_name": realtime.get("assistant_name", "Jarvis"),
-            "welcome_name": realtime.get("welcome_name", ""),
-            "welcome_prompt": realtime.get(
-                "welcome_prompt",
-                get_default_welcome_prompt(language),
-            ),
-        }
+        return build_public_config(self.config)
 
 
 def mint_ephemeral_token(config: dict[str, Any]) -> dict[str, Any]:
@@ -236,8 +253,9 @@ def find_free_port(start_port: int) -> int:
     raise RuntimeError("Aucun port libre trouve pour le localhost welcome.")
 
 
-def build_index_html(public_config: dict[str, Any]) -> str:
+def build_index_html(public_config: dict[str, Any], route_prefix: str = "") -> str:
     language = public_config.get("language", DEFAULT_LANGUAGE)
+    prefix = normalize_route_prefix(route_prefix)
     assistant_name = public_config.get("assistant_name", "Jarvis")
     model = public_config.get("model", "gpt-realtime")
     voice = public_config.get("voice", "marin")
@@ -318,7 +336,7 @@ tailwind.config = {{
   }},
 }}
 </script>
-<link rel="stylesheet" href="/styles.css"/>
+<link rel="stylesheet" href="{prefix}/styles.css"/>
 </head>
 <body class="dark bg-background text-on-background font-body overflow-x-hidden min-h-screen">
 <div class="fixed inset-0 grid-bg pointer-events-none"></div>
@@ -441,7 +459,7 @@ tailwind.config = {{
 </button>
 </nav>
 
-<script src="/app.js" type="module"></script>
+<script src="{prefix}/app.js" type="module"></script>
 </body>
 </html>
 """
@@ -514,10 +532,13 @@ html, body { margin: 0; min-height: 100%; }
 """
 
 
-def build_app_js(server: RealtimeWelcomeServer) -> str:
-    public_config = json.dumps(server.public_config(), ensure_ascii=True)
+def build_app_js_from_public_config(public_config: dict[str, Any], route_prefix: str = "") -> str:
+    prefix = normalize_route_prefix(route_prefix)
+    token_endpoint = f"{prefix}/token" or "/token"
+    public_config_json = json.dumps(public_config, ensure_ascii=True)
     return f"""
-const PUBLIC_CONFIG = {public_config};
+const PUBLIC_CONFIG = {public_config_json};
+const TOKEN_ENDPOINT = {json.dumps(token_endpoint, ensure_ascii=True)};
 const COPY = PUBLIC_CONFIG.language === "en"
   ? {{
       sessionAlreadyActive: "Session already active.",
@@ -612,7 +633,7 @@ async function connect() {{
 
   try {{
     setStatus(COPY.gettingToken);
-    const tokenResponse = await fetch("/token", {{ method: "POST" }});
+    const tokenResponse = await fetch(TOKEN_ENDPOINT, {{ method: "POST" }});
     const tokenData = await tokenResponse.json();
     if (!tokenResponse.ok) {{
       throw new Error(tokenData.error || COPY.tokenFailed);
@@ -816,3 +837,7 @@ disconnectButton.addEventListener("click", () => {{
 resetTranscript();
 connect();
 """
+
+
+def build_app_js(server: RealtimeWelcomeServer) -> str:
+    return build_app_js_from_public_config(server.public_config())

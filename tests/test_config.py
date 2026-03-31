@@ -59,19 +59,21 @@ class ConfigParsingTests(unittest.TestCase):
 
     def test_prompt_for_custom_target_url(self) -> None:
         answers = iter(["1", "Mon lien", "https://example.com"])
-        with patch("builtins.input", side_effect=lambda prompt="": next(answers)):
-            target = prompt_for_custom_target(1)
+        with redirect_stdout(io.StringIO()):
+            with patch("builtins.input", side_effect=lambda prompt="": next(answers)):
+                target = prompt_for_custom_target(1)
 
         self.assertEqual(target["id"], "custom_url")
         self.assertEqual(target["url"], "https://example.com")
 
     def test_prompt_for_custom_target_path_uses_drag_drop_path(self) -> None:
         answers = iter(["2", "Mon dossier", '"/tmp/demo folder"'])
-        with patch("builtins.input", side_effect=lambda prompt="": next(answers)):
-            target = prompt_for_custom_target(1)
+        with redirect_stdout(io.StringIO()):
+            with patch("builtins.input", side_effect=lambda prompt="": next(answers)):
+                target = prompt_for_custom_target(1)
 
         self.assertEqual(target["id"], "custom_path")
-        self.assertEqual(target["path"], "/tmp/demo folder")
+        self.assertEqual(Path(target["path"]), Path("/tmp/demo folder"))
 
     def test_prompt_for_targets_selection_uses_inline_selector_when_available(self) -> None:
         with patch("clap_wake.config.terminal_ui_available", return_value=True):
@@ -88,8 +90,9 @@ class ConfigParsingTests(unittest.TestCase):
             ]
         }
         with patch("clap_wake.config.terminal_ui_available", return_value=False):
-            with patch("builtins.input", return_value=""):
-                selected = prompt_for_targets_selection("fr", {}, existing_config=existing_config)
+            with redirect_stdout(io.StringIO()):
+                with patch("builtins.input", return_value=""):
+                    selected = prompt_for_targets_selection("fr", {}, existing_config=existing_config)
 
         self.assertEqual(selected, [1, 5])
 
@@ -184,6 +187,30 @@ class ConfigParsingTests(unittest.TestCase):
 
         self.assertEqual(config["media"]["mode"], "url")
 
+    def test_migrate_config_promotes_legacy_localhost_target_to_realtime_toggle(self) -> None:
+        config = {
+            "version": 8,
+            "language": "fr",
+            "workspace_dir": "/tmp",
+            "selected_targets": [
+                {"id": "codex_desktop", "label": "Codex Desktop"},
+                {"id": "welcome_localhost", "label": "Localhost Welcome"},
+            ],
+            "microphone": dict(DEFAULT_CONFIG["microphone"]),
+            "media": dict(DEFAULT_CONFIG["media"]),
+            "realtime": {
+                **dict(DEFAULT_CONFIG["realtime"]),
+                "port": 8765,
+            },
+            "dashboard": dict(DEFAULT_CONFIG["dashboard"]),
+        }
+
+        migrate_config(config)
+
+        self.assertEqual(config["selected_targets"], [{"id": "codex_desktop", "label": "Codex Desktop"}])
+        self.assertTrue(config["realtime"]["launch_on_clap"])
+        self.assertEqual(config["realtime"]["port"], 8766)
+
     def test_default_workspace_dir_uses_dedicated_subfolder(self) -> None:
         self.assertEqual(
             get_default_workspace_dir(Path("/tmp/demo")),
@@ -219,8 +246,9 @@ class ConfigParsingTests(unittest.TestCase):
     def test_prompt_for_custom_targets_keeps_existing_targets_by_default(self) -> None:
         existing = [{"id": "custom_url", "label": "Docs", "url": "https://example.com"}]
         answers = iter(["", ""])
-        with patch("builtins.input", side_effect=lambda prompt="": next(answers)):
-            targets = prompt_for_custom_targets("fr", existing)
+        with redirect_stdout(io.StringIO()):
+            with patch("builtins.input", side_effect=lambda prompt="": next(answers)):
+                targets = prompt_for_custom_targets("fr", existing)
 
         self.assertEqual(targets, existing)
 

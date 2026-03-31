@@ -15,6 +15,14 @@ from typing import Any
 from .config import DEFAULT_CONFIG, load_config, merge_dict, migrate_config, save_config
 from .env_utils import load_env_value, save_env_value
 from .launcher import open_url_foreground
+from .realtime_localhost import (
+    build_app_js_from_public_config,
+    build_index_html as build_realtime_index_html,
+    build_public_config as build_realtime_public_config,
+    build_styles_css as build_realtime_styles_css,
+    build_welcome_url,
+    mint_ephemeral_token,
+)
 from .runtime_control import clear_runtime_state, register_runtime
 from .service import WakeService
 
@@ -36,8 +44,8 @@ class DashboardRuntime:
         self.url = ""
 
     def start(self) -> str:
-        self.restart_listener()
         self._start_server()
+        self.restart_listener()
         return self.url
 
     def wait(self) -> None:
@@ -62,7 +70,11 @@ class DashboardRuntime:
         self.stop_listener()
         with self._lock:
             workspace_dir = Path(self.config.get("workspace_dir") or Path.cwd())
-            self.service = WakeService(config=self.config, project_dir=workspace_dir)
+            self.service = WakeService(
+                config=self.config,
+                project_dir=workspace_dir,
+                localhost_welcome_url=build_welcome_url(self.url) if self.url else None,
+            )
             self.listener_thread = threading.Thread(target=self._run_listener, daemon=True)
             self.listener_thread.start()
             self._status = "Listening"
@@ -156,6 +168,7 @@ class DashboardRuntime:
             "status": self._status,
             "listener_running": bool(self.listener_thread and self.listener_thread.is_alive()),
             "dashboard_url": self.url,
+            "welcome_url": build_welcome_url(self.url) if self.url else "",
             "config_path": str(self.config_path),
             "openai_key_present": bool(load_env_value(env_path, "OPENAI_API_KEY")),
             "config": config,
@@ -193,14 +206,25 @@ class DashboardRuntime:
                 if self.path in {"/", "/index.html"}:
                     self._send_html(build_dashboard_html())
                     return
+                if self.path in {"/welcome", "/welcome/"}:
+                    self._send_html(build_realtime_index_html(build_realtime_public_config(runtime.config), route_prefix="/welcome"))
+                    return
                 if self.path == "/settings":
                     self._send_html(build_dashboard_settings_html())
                     return
                 if self.path == "/styles.css":
                     self._send_css(build_dashboard_css())
                     return
+                if self.path == "/welcome/styles.css":
+                    self._send_css(build_realtime_styles_css())
+                    return
                 if self.path == "/app.js":
                     self._send_js(build_dashboard_js())
+                    return
+                if self.path == "/welcome/app.js":
+                    self._send_js(
+                        build_app_js_from_public_config(build_realtime_public_config(runtime.config), route_prefix="/welcome")
+                    )
                     return
                 if self.path == "/settings.js":
                     self._send_js(build_dashboard_settings_js())
@@ -208,7 +232,13 @@ class DashboardRuntime:
                 if self.path == "/state":
                     self._send_json(runtime.state())
                     return
+                if self.path == "/welcome/config":
+                    self._send_json(build_realtime_public_config(runtime.config))
+                    return
                 if self.path == "/health":
+                    self._send_json({"ok": True})
+                    return
+                if self.path == "/welcome/health":
                     self._send_json({"ok": True})
                     return
                 self.send_error(HTTPStatus.NOT_FOUND, "Not Found")
@@ -259,6 +289,10 @@ class DashboardRuntime:
                         payload = self._read_json()
                         runtime.save_dashboard_config(payload)
                         self._send_json({"ok": True})
+                        return
+                    if self.path == "/welcome/token":
+                        payload = mint_ephemeral_token(runtime.config)
+                        self._send_json(payload)
                         return
                     if self.path == "/shutdown":
                         self._send_json({"ok": True})
@@ -915,7 +949,7 @@ function renderTargets(targets) {
     lbl.textContent = (target.label || target.id || "TARGET").toUpperCase();
     const st = document.createElement("span");
     st.className = index === 0 ? "ml-auto text-2xs text-primary/40" : "ml-auto text-2xs text-on-surface-variant";
-    st.textContent = target.id === "welcome_localhost" ? "REALTIME" : index === 0 ? "FIRST" : "READY";
+    st.textContent = index === 0 ? "FIRST" : "READY";
     row.append(dot, lbl, st);
     targetsList.appendChild(row);
   });

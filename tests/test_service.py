@@ -104,10 +104,8 @@ class WakeServiceTests(unittest.TestCase):
         launch_target_mock,
     ) -> None:
         config = self.build_config()
-        config["selected_targets"] = [
-            {"id": "welcome_localhost", "label": "Localhost Welcome"},
-            {"id": "claude_web", "label": "claude.com", "url": "https://claude.com"},
-        ]
+        config["realtime"]["launch_on_clap"] = True
+        config["selected_targets"] = [{"id": "claude_web", "label": "claude.com", "url": "https://claude.com"}]
 
         service = WakeService(config=config, project_dir=Path("/tmp"))
         service.launch_selected_targets()
@@ -124,9 +122,6 @@ class WakeServiceTests(unittest.TestCase):
         run_loop_mock,
     ) -> None:
         config = self.build_config()
-        config["selected_targets"] = [
-            {"id": "welcome_localhost", "label": "Localhost Welcome"},
-        ]
         service = WakeService(config=config, project_dir=Path("/tmp"))
 
         service.run_forever()
@@ -180,9 +175,7 @@ class WakeServiceTests(unittest.TestCase):
         service = WakeService(config=config, project_dir=Path("/tmp"))
         self.assertEqual(service.music_volume(), 0.6)
 
-        config["selected_targets"] = [
-            {"id": "welcome_localhost", "label": "Localhost Welcome"},
-        ]
+        config["realtime"]["launch_on_clap"] = True
         service = WakeService(config=config, project_dir=Path("/tmp"))
         self.assertEqual(service.music_volume(), 0.24)
 

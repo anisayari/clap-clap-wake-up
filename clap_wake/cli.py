@@ -17,6 +17,7 @@ from .config import (
     save_config,
 )
 from .discovery import detect_known_targets
+from .invocation import build_module_command
 from .launcher import launch_dashboard_terminal
 from .runtime_control import clear_runtime_state, register_runtime, request_runtime_stop
 from .service import WakeService
@@ -95,7 +96,7 @@ def main(argv: list[str] | None = None) -> int:
             config = load_config(args.config)
         except FileNotFoundError as exc:
             print(str(exc))
-            print("Lance `clap-wake setup` pour creer la configuration.")
+            print(f"Lance `{build_module_command('setup')}` pour creer la configuration.")
             return 1
         print_config(config, args.config)
         return 0
@@ -114,7 +115,7 @@ def main(argv: list[str] | None = None) -> int:
             config = load_config(args.config)
         except FileNotFoundError as exc:
             print(str(exc))
-            print("Lance `clap-wake setup` pour creer la configuration.")
+            print(f"Lance `{build_module_command('setup')}` pour creer la configuration.")
             return 1
         run_clap_calibration(config)
         save_config(config, args.config)
@@ -138,7 +139,7 @@ def main(argv: list[str] | None = None) -> int:
             load_config(args.config)
         except FileNotFoundError as exc:
             print(str(exc))
-            print("Lance `clap-wake setup` pour creer la configuration.")
+            print(f"Lance `{build_module_command('setup')}` pour creer la configuration.")
             return 1
         return run_dashboard(config_path=args.config)
 
@@ -162,7 +163,7 @@ def main(argv: list[str] | None = None) -> int:
             config = load_config(args.config)
         except FileNotFoundError as exc:
             print(str(exc))
-            print("Lance `clap-wake setup` pour creer la configuration.")
+            print(f"Lance `{build_module_command('setup')}` pour creer la configuration.")
             return 1
         workspace_dir = Path(config.get("workspace_dir") or Path.cwd())
         service = WakeService(config=config, project_dir=workspace_dir)

@@ -38,6 +38,14 @@ from .sound_library import (
     normalize_user_path,
 )
 
+for stream_name in ("stdout", "stderr"):
+    stream = getattr(sys, stream_name, None)
+    if hasattr(stream, "reconfigure"):
+        try:
+            stream.reconfigure(errors="replace")
+        except Exception:
+            pass
+
 APP_NAME = "ClapWakeUp"
 YOUTUBE_FALLBACK_URL = "https://www.youtube.com/watch?v=l482T0yNkeo"
 DEFAULT_LANGUAGE = "fr"
@@ -49,11 +57,10 @@ AVAILABLE_TARGETS = [
     {"id": "claude_code", "label": "Claude Code"},
     {"id": "claude_web", "label": "claude.com"},
     {"id": "chatgpt_web", "label": "chatgpt.com"},
-    {"id": "welcome_localhost", "label": "Localhost Welcome (OpenAI Realtime)"},
 ]
 
 DEFAULT_CONFIG: dict[str, Any] = {
-    "version": 8,
+    "version": 9,
     "language": DEFAULT_LANGUAGE,
     "workspace_dir": None,
     "selected_targets": [],
@@ -82,10 +89,11 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "api_key": None,
         "model": "gpt-realtime",
         "voice": "marin",
-        "port": 8765,
+        "port": 8766,
         "assistant_name": "Jarvis",
         "welcome_name": "",
         "welcome_prompt": "",
+        "launch_on_clap": False,
     },
     "dashboard": {
         "port": 8766,
@@ -148,6 +156,10 @@ TEXTS = {
         "choose_language_prompt": "🌍 Langue [1=Français, 2=English] : ",
         "choose_language_selector": "Utilise ↑ ↓ puis Entree pour choisir la langue.",
         "targets_title": "🎯 Choisis ce qui doit s'ouvrir au double clap.",
+        "targets_scan_title": "🔍 Detection locale des outils",
+        "targets_scan_intro": "On cherche automatiquement Codex, Claude et les chemins connus avant les questions.",
+        "targets_scan_found": "✅ {label}: {value}",
+        "targets_scan_missing": "◌ {label}: non detecte",
         "targets_hint": "💡 Entre les numeros avec ou sans virgules. Exemple: 1 2 4",
         "targets_selector": "Utilise ↑ ↓ pour bouger, Espace pour cocher, puis Entree pour valider.",
         "targets_selector_title": "🎯 Cibles du double clap",
@@ -237,12 +249,12 @@ TEXTS = {
         "video_prompt": "🔗 URL video [{default}] : ",
         "video_invalid": "URL invalide. Il faut commencer par http:// ou https://",
         "realtime_title": "🌐 Reglages Localhost Welcome",
+        "realtime_local_url": "🌐 Localhost Welcome utilise {url}",
         "realtime_assistant_name": "🤖 Nom de l'IA [{default}] : ",
         "realtime_name": "👋 Nom a utiliser dans le message de bienvenue [{default}] : ",
         "realtime_voice": "🗣️  Voix Realtime [{default}] : ",
-        "realtime_port": "🌐 Port du localhost welcome [{default}] : ",
-        "realtime_port_invalid": "Entre un port numerique valide.",
-        "realtime_port_range": "Le port doit etre compris entre 1 et 65535.",
+        "realtime_launch_yes": "✨ Ouvrir le message de bienvenue OpenAI Realtime au double clap ? [Y/n] : ",
+        "realtime_launch_no": "✨ Ouvrir le message de bienvenue OpenAI Realtime au double clap ? [y/N] : ",
         "realtime_prompt": "✨ Prompt de bienvenue [{default}] : ",
         "config_saved": "✨ Config sauvee pour:",
         "codex_desktop_prompt": "Commande personnalisee pour ouvrir Codex Desktop",
@@ -256,6 +268,10 @@ TEXTS = {
         "choose_language_prompt": "🌍 Language [1=English, 2=Français] : ",
         "choose_language_selector": "Use ↑ ↓ then Enter to choose the language.",
         "targets_title": "🎯 Choose what should open on double clap.",
+        "targets_scan_title": "🔍 Local tool detection",
+        "targets_scan_intro": "Scanning Codex, Claude, and common local install paths before the questions.",
+        "targets_scan_found": "✅ {label}: {value}",
+        "targets_scan_missing": "◌ {label}: not found",
         "targets_hint": "💡 Enter numbers with or without commas. Example: 1 2 4",
         "targets_selector": "Use ↑ ↓ to move, Space to toggle, then Enter to confirm.",
         "targets_selector_title": "🎯 Double clap targets",
@@ -345,12 +361,12 @@ TEXTS = {
         "video_prompt": "🔗 Video URL [{default}] : ",
         "video_invalid": "Invalid URL. It must start with http:// or https://",
         "realtime_title": "🌐 Localhost Welcome settings",
+        "realtime_local_url": "🌐 Localhost Welcome uses {url}",
         "realtime_assistant_name": "🤖 AI name [{default}] : ",
         "realtime_name": "👋 Name to use in the welcome message [{default}] : ",
         "realtime_voice": "🗣️  Realtime voice [{default}] : ",
-        "realtime_port": "🌐 Localhost Welcome port [{default}] : ",
-        "realtime_port_invalid": "Enter a valid numeric port.",
-        "realtime_port_range": "Port must be between 1 and 65535.",
+        "realtime_launch_yes": "✨ Open the OpenAI Realtime welcome on double clap? [Y/n] : ",
+        "realtime_launch_no": "✨ Open the OpenAI Realtime welcome on double clap? [y/N] : ",
         "realtime_prompt": "✨ Welcome prompt [{default}] : ",
         "config_saved": "✨ Config saved for:",
         "codex_desktop_prompt": "Custom command to open Codex Desktop",
@@ -888,6 +904,8 @@ def prompt_setup(config_path: Path | None = None) -> Path:
 
     print(t(language, "setup_title"))
     print()
+    print_detected_targets_summary(language, detected_targets)
+    print()
     print(t(language, "targets_title"))
     print()
     selected_ids = prompt_for_targets_selection(language, detected_targets, existing_config)
@@ -922,8 +940,7 @@ def prompt_setup(config_path: Path | None = None) -> Path:
     prompt_for_permissions(config, language)
     prompt_for_media(config, language)
     prompt_for_clap_calibration(config, language)
-    if any(target["id"] == "welcome_localhost" for target in selected_targets):
-        prompt_for_realtime(config, language)
+    prompt_for_realtime(config, language)
 
     print()
     print(t(language, "config_saved"))
@@ -1043,7 +1060,7 @@ def build_target_config(
     existing: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if target_id == "codex_desktop":
-        detected_app = (detected or {}).get("app_path")
+        detected_app = (existing or {}).get("app_path") or (detected or {}).get("app_path")
         default_command = (existing or {}).get("custom_command", "")
         command = input(
             default_prompt(
@@ -1227,6 +1244,8 @@ def migrate_config(config: dict[str, Any]) -> None:
     realtime = config.setdefault("realtime", {})
     microphone = config.setdefault("microphone", {})
     dashboard = config.setdefault("dashboard", {})
+    selected_targets = list(config.get("selected_targets", []))
+    config_version = int(config.get("version", 1) or 1)
 
     if not media.get("library_dir"):
         media["library_dir"] = str(get_media_library_dir())
@@ -1239,6 +1258,16 @@ def migrate_config(config: dict[str, Any]) -> None:
 
     if config.get("version", 1) < 4 and microphone.get("trigger_cooldown_seconds") == 8.0:
         microphone["trigger_cooldown_seconds"] = 2.0
+
+    if not dashboard.get("port"):
+        dashboard["port"] = realtime.get("port") or 8766
+    if not realtime.get("port"):
+        realtime["port"] = dashboard.get("port") or 8766
+    if config_version < 9 and realtime.get("port") == 8765:
+        realtime["port"] = dashboard.get("port") or 8766
+    if config_version < 9 and any(target.get("id") == "welcome_localhost" for target in selected_targets):
+        realtime["launch_on_clap"] = True
+        config["selected_targets"] = [target for target in selected_targets if target.get("id") != "welcome_localhost"]
 
     config["version"] = DEFAULT_CONFIG["version"]
     merge_dict(config["realtime"], realtime)
@@ -1558,6 +1587,29 @@ def format_detected_target(detected: dict[str, Any] | None) -> str | None:
     return None
 
 
+def detected_target_path(detected: dict[str, Any] | None) -> str | None:
+    if not detected or not detected.get("found"):
+        return None
+    if detected.get("method") == "app_path":
+        return str(detected.get("app_path") or "")
+    if detected.get("method") == "command":
+        return str(detected.get("command") or "")
+    return None
+
+
+def print_detected_targets_summary(language: str, detected_targets: dict[str, Any]) -> None:
+    print(t(language, "targets_scan_title"))
+    print(t(language, "targets_scan_intro"))
+    print()
+    for target in AVAILABLE_TARGETS:
+        label = target["label"]
+        detected_value = detected_target_path(detected_targets.get(target["id"]))
+        if detected_value:
+            print(t(language, "targets_scan_found", label=label, value=detected_value))
+        else:
+            print(t(language, "targets_scan_missing", label=label))
+
+
 def print_setup_banner() -> None:
     print(SETUP_TITLE_ASCII.rstrip())
     print()
@@ -1642,8 +1694,14 @@ def prompt_for_permissions(config: dict[str, Any], language: str) -> None:
 
 def prompt_for_realtime(config: dict[str, Any], language: str) -> None:
     realtime = config["realtime"]
+    dashboard = config.setdefault("dashboard", {})
+    localhost_port = int(dashboard.get("port") or realtime.get("port") or 8766)
+    dashboard["port"] = localhost_port
+    realtime["port"] = localhost_port
     print()
     print(t(language, "realtime_title"))
+    print()
+    print(t(language, "realtime_local_url", url=f"http://127.0.0.1:{localhost_port}/welcome/"))
     print()
     assistant_name_default = realtime.get("assistant_name") or "Jarvis"
     assistant_name = input(t(language, "realtime_assistant_name", default=assistant_name_default)).strip()
@@ -1657,23 +1715,13 @@ def prompt_for_realtime(config: dict[str, Any], language: str) -> None:
     voice = input(t(language, "realtime_voice", default=voice_default)).strip()
     realtime["voice"] = voice or voice_default
 
-    port_default = str(realtime.get("port", 8765))
-    while True:
-        port = input(t(language, "realtime_port", default=port_default)).strip()
-        try:
-            port_value = int(port or port_default)
-        except ValueError:
-            print(t(language, "realtime_port_invalid"))
-            continue
-        if not 1 <= port_value <= 65535:
-            print(t(language, "realtime_port_range"))
-            continue
-        realtime["port"] = port_value
-        break
-
     prompt_default = realtime.get(
         "welcome_prompt",
         get_default_welcome_prompt(language),
     )
     welcome_prompt = input(t(language, "realtime_prompt", default=prompt_default)).strip()
     realtime["welcome_prompt"] = welcome_prompt or prompt_default
+
+    launch_default = bool(realtime.get("launch_on_clap", False))
+    prompt_key = "realtime_launch_yes" if launch_default else "realtime_launch_no"
+    realtime["launch_on_clap"] = prompt_yes_no(language, t(language, prompt_key), default=launch_default)

@@ -16,9 +16,10 @@ from .youtube_cache import YouTubeCacheError, ensure_youtube_audio_cached, is_yo
 
 
 class WakeService:
-    def __init__(self, config: dict, project_dir: Path) -> None:
+    def __init__(self, config: dict, project_dir: Path, localhost_welcome_url: str | None = None) -> None:
         self.config = config
         self.project_dir = project_dir
+        self.localhost_welcome_url = localhost_welcome_url
         self.logger = logging.getLogger("clap_wake")
         self.player = Mp3Player()
         self._trigger_lock = Lock()
@@ -54,12 +55,16 @@ class WakeService:
             self.logger.info("Double clap detected. Launching targets.")
             mp3_path, media_url = self.resolve_media_action()
             target_count = len(self.config["selected_targets"])
-            total_windows = target_count + (1 if media_url else 0)
+            realtime_window_count = 1 if self.should_launch_realtime_on_clap() else 0
+            total_windows = target_count + realtime_window_count + (1 if media_url else 0)
             layout = plan_launch_layout(total_windows)
-            target_bounds = layout[:target_count]
-            media_bounds = layout[target_count] if media_url and len(layout) > target_count else None
+            realtime_bounds = layout[0] if realtime_window_count else None
+            target_bounds_start = realtime_window_count
+            target_bounds_end = target_bounds_start + target_count
+            target_bounds = layout[target_bounds_start:target_bounds_end]
+            media_bounds = layout[target_bounds_end] if media_url and len(layout) > target_bounds_end else None
 
-            self.launch_selected_targets(target_bounds=target_bounds)
+            self.launch_selected_targets(target_bounds=target_bounds, realtime_bounds=realtime_bounds)
             self.play_media_only(
                 mp3_path=mp3_path,
                 media_url=media_url,
@@ -143,28 +148,27 @@ class WakeService:
             return False
         return len(list_audio_from_folder(folder)) > 1
 
-    def launch_selected_targets(self, target_bounds: list[WindowBounds] | None = None) -> None:
-        realtime_index = next(
-            (index for index, target in enumerate(self.config["selected_targets"]) if target["id"] == "welcome_localhost"),
-            None,
-        )
-        if realtime_index is not None:
-            realtime_url = ensure_realtime_server(self.config)
-            realtime_bounds = target_bounds[realtime_index] if target_bounds and realtime_index < len(target_bounds) else None
+    def launch_selected_targets(
+        self,
+        target_bounds: list[WindowBounds] | None = None,
+        realtime_bounds: WindowBounds | None = None,
+    ) -> None:
+        if self.should_launch_realtime_on_clap():
+            realtime_url = self.localhost_welcome_url or ensure_realtime_server(self.config)
             open_url_foreground(realtime_url, bounds=realtime_bounds)
-
         for index, target in enumerate(self.config["selected_targets"]):
-            if target["id"] == "welcome_localhost":
-                continue
-            bounds_index = index
-            bounds = target_bounds[bounds_index] if target_bounds and bounds_index < len(target_bounds) else None
+            bounds = target_bounds[index] if target_bounds and index < len(target_bounds) else None
             launch_target(target, cwd=self.project_dir, bounds=bounds)
 
-    def has_realtime_target(self) -> bool:
+    def should_launch_realtime_on_clap(self) -> bool:
+        realtime = self.config.get("realtime", {})
+        if "launch_on_clap" in realtime:
+            return bool(realtime.get("launch_on_clap"))
         return any(target["id"] == "welcome_localhost" for target in self.config["selected_targets"])
 
     def _prepare_realtime_if_needed(self) -> None:
-        if not self.has_realtime_target():
+        if self.localhost_welcome_url:
+            self.logger.info("Realtime localhost available on %s", self.localhost_welcome_url)
             return
         try:
             url = ensure_realtime_server(self.config)
@@ -243,14 +247,14 @@ class WakeService:
         media = self.config.get("media", {})
         default = 0.24
         volume = float(media.get("music_volume", default))
-        if self.has_realtime_target():
+        if self.should_launch_realtime_on_clap():
             volume = min(volume, 0.24)
         return max(0.0, min(1.0, volume))
 
     def action_guard_seconds(self) -> float:
         guard = 3.0
         media = self.config.get("media", {})
-        if self.has_realtime_target():
+        if self.should_launch_realtime_on_clap():
             guard = max(guard, 7.0)
         if media.get("mode") in {"single_file", "folder_random", "url", "auto_downloads"}:
             guard = max(guard, 6.0)

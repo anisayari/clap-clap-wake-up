@@ -54,17 +54,9 @@ def probe_microphone_permission(microphone_config: dict[str, Any]) -> Permission
 
     sample_rate = int(microphone_config.get("sample_rate", 16000))
     blocksize = int(microphone_config.get("blocksize", 512))
+    device_index = _configured_device_index(microphone_config)
     try:
-        stream_kwargs = {
-            "samplerate": sample_rate,
-            "channels": 1,
-            "dtype": "float32",
-            "blocksize": blocksize,
-        }
-        if microphone_config.get("input_device") not in {None, ""}:
-            stream_kwargs["device"] = int(microphone_config["input_device"])
-        with sd.InputStream(**stream_kwargs):
-            time.sleep(0.12)
+        _open_input_stream(sd, sample_rate=sample_rate, blocksize=blocksize, device_index=device_index)
         return PermissionResult(
             key="microphone",
             label="Microphone",
@@ -73,12 +65,29 @@ def probe_microphone_permission(microphone_config: dict[str, Any]) -> Permission
             can_open_settings=False,
         )
     except Exception as exc:
+        fallback_rates = _fallback_sample_rates(sd, device_index=device_index, current_rate=sample_rate)
+        for fallback_rate in fallback_rates:
+            try:
+                _open_input_stream(sd, sample_rate=fallback_rate, blocksize=blocksize, device_index=device_index)
+            except Exception:
+                continue
+
+            microphone_config["sample_rate"] = fallback_rate
+            return PermissionResult(
+                key="microphone",
+                label="Microphone",
+                granted=True,
+                message=f"Microphone input is available with sample rate {fallback_rate} Hz.",
+                can_open_settings=False,
+            )
+
+        is_config_error = _looks_like_stream_format_error(str(exc))
         return PermissionResult(
             key="microphone",
             label="Microphone",
             granted=False,
             message=str(exc) or "Microphone access failed.",
-            can_open_settings=settings_supported("microphone"),
+            can_open_settings=(not is_config_error) and settings_supported("microphone"),
         )
 
 
@@ -114,7 +123,7 @@ def probe_accessibility_permission(platform: str | None = None) -> PermissionRes
         label="Accessibility",
         granted=False,
         message=stderr or stdout or "Accessibility permission is not enabled.",
-        can_open_settings=settings_supported("accessibility"),
+        can_open_settings=settings_supported("accessibility", platform=resolved_platform),
     )
 
 
@@ -149,3 +158,58 @@ def settings_command_for(key: str, platform: str | None = None) -> list[str] | N
         return ["cmd", "/c", "start", "", url] if url else None
 
     return None
+
+
+def _configured_device_index(microphone_config: dict[str, Any]) -> int | None:
+    raw = microphone_config.get("input_device")
+    if raw in {None, ""}:
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def _open_input_stream(sd: Any, sample_rate: int, blocksize: int, device_index: int | None) -> None:
+    stream_kwargs = {
+        "samplerate": sample_rate,
+        "channels": 1,
+        "dtype": "float32",
+        "blocksize": blocksize,
+    }
+    if device_index is not None:
+        stream_kwargs["device"] = device_index
+    with sd.InputStream(**stream_kwargs):
+        time.sleep(0.12)
+
+
+def _fallback_sample_rates(sd: Any, device_index: int | None, current_rate: int) -> list[int]:
+    candidates: list[int] = []
+    try:
+        device_info = sd.query_devices(device_index) if device_index is not None else sd.query_devices()
+    except Exception:
+        device_info = None
+
+    default_rate = None
+    if isinstance(device_info, dict):
+        raw_default = device_info.get("default_samplerate")
+        try:
+            default_rate = int(float(raw_default)) if raw_default else None
+        except (TypeError, ValueError):
+            default_rate = None
+
+    for rate in [default_rate, 48000, 44100, 32000, 22050, 16000]:
+        if rate and rate != current_rate and rate not in candidates:
+            candidates.append(rate)
+    return candidates
+
+
+def _looks_like_stream_format_error(message: str) -> bool:
+    lowered = message.casefold()
+    return (
+        "invalid sample rate" in lowered
+        or "paerrorcode -9997" in lowered
+        or "invalid number of channels" in lowered
+        or "device unavailable" in lowered
+        or "error opening inputstream" in lowered
+    )

@@ -68,6 +68,57 @@ class PermissionTests(unittest.TestCase):
         self.assertTrue(result.granted)
         self.assertEqual(captured["device"], 9)
 
+    def test_probe_microphone_permission_falls_back_to_device_default_sample_rate(self) -> None:
+        attempts: list[int] = []
+
+        class FakeInputStream:
+            def __init__(self, **kwargs) -> None:
+                attempts.append(int(kwargs["samplerate"]))
+                if int(kwargs["samplerate"]) == 16000:
+                    raise RuntimeError("Error opening InputStream: Invalid sample rate [PaErrorCode -9997]")
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb) -> bool:
+                return False
+
+        fake_sounddevice = SimpleNamespace(
+            InputStream=FakeInputStream,
+            query_devices=lambda device=None: {"default_samplerate": 48000},
+        )
+        microphone_config = {"sample_rate": 16000, "blocksize": 512, "input_device": 9}
+
+        with patch.dict("sys.modules", {"sounddevice": fake_sounddevice}):
+            result = probe_microphone_permission(microphone_config)
+
+        self.assertTrue(result.granted)
+        self.assertEqual(attempts, [16000, 48000])
+        self.assertEqual(microphone_config["sample_rate"], 48000)
+        self.assertIn("48000", result.message)
+
+    def test_probe_microphone_permission_does_not_suggest_settings_for_invalid_sample_rate(self) -> None:
+        class FakeInputStream:
+            def __init__(self, **kwargs) -> None:
+                raise RuntimeError("Error opening InputStream: Invalid sample rate [PaErrorCode -9997]")
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb) -> bool:
+                return False
+
+        fake_sounddevice = SimpleNamespace(
+            InputStream=FakeInputStream,
+            query_devices=lambda device=None: {"default_samplerate": 16000},
+        )
+
+        with patch.dict("sys.modules", {"sounddevice": fake_sounddevice}):
+            result = probe_microphone_permission({"sample_rate": 16000, "blocksize": 512, "input_device": 9})
+
+        self.assertFalse(result.granted)
+        self.assertFalse(result.can_open_settings)
+
 
 if __name__ == "__main__":
     unittest.main()
