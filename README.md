@@ -90,6 +90,7 @@ clap-wake stop
 clap-wake dashboard
 clap-wake tray
 clap-wake calibrate
+clap-wake save-layout
 clap-wake status
 clap-cake help
 clap-wake install-autostart
@@ -122,6 +123,16 @@ The interactive setup lets you:
   - a video URL
   - auto scan from `assets/audio`
   - no local media
+
+If you want the app to reopen windows in the exact arrangement you already use, first place your apps and browser windows where you want them, then run:
+
+```bash
+clap-wake save-layout
+```
+
+The saved layout is then reused on the next double clap, as long as the same monitor topology is still connected.
+
+`save-layout` can also auto-capture visible browser windows and their current URLs from your main browser session, then add them to the clap relaunch sequence even if they were not manually configured in setup.
 
 When you choose a YouTube URL, Clap Wake Up now downloads it to the local media cache as an MP3 on startup and reuses that cached file on later runs. The first download may take a bit longer because the bundled `ffmpeg` runtime may need to be provisioned once. Non-YouTube URLs still open in the browser.
 

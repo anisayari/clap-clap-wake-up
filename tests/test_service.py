@@ -17,6 +17,8 @@ class WakeServiceTests(unittest.TestCase):
             "microphone": dict(DEFAULT_CONFIG["microphone"]),
             "media": dict(DEFAULT_CONFIG["media"]),
             "realtime": dict(DEFAULT_CONFIG["realtime"]),
+            "window_layout": dict(DEFAULT_CONFIG["window_layout"]),
+            "browser": dict(DEFAULT_CONFIG["browser"]),
         }
         return config
 
@@ -66,23 +68,13 @@ class WakeServiceTests(unittest.TestCase):
 
         service.handle_trigger()
 
-        open_url_mock.assert_called_once_with("https://example.com/soundtrack", bounds=ANY)
+        open_url_mock.assert_called_once_with(
+            "https://example.com/soundtrack",
+            bounds=ANY,
+            browser_preferences=ANY,
+        )
 
-    @patch("clap_wake.service.ensure_youtube_audio_cached", return_value=Path("/tmp/cached-youtube.mp3"))
-    def test_youtube_media_url_prefers_cached_mp3(self, cache_mock) -> None:
-        config = self.build_config()
-        config["media"]["mode"] = "url"
-        config["media"]["selected_url"] = "https://youtube.com/watch?v=abc123XYZ_0"
-        service = WakeService(config=config, project_dir=Path("/tmp"))
-
-        mp3_path, media_url = service.resolve_media_action()
-
-        self.assertEqual(mp3_path, Path("/tmp/cached-youtube.mp3"))
-        self.assertIsNone(media_url)
-        cache_mock.assert_called_once_with("https://youtube.com/watch?v=abc123XYZ_0")
-
-    @patch("clap_wake.service.ensure_youtube_audio_cached", side_effect=YouTubeCacheError("ffmpeg missing"))
-    def test_youtube_media_url_falls_back_to_browser_when_cache_fails(self, cache_mock) -> None:
+    def test_youtube_media_url_opens_selected_url_directly(self) -> None:
         config = self.build_config()
         config["media"]["mode"] = "url"
         config["media"]["selected_url"] = "https://youtube.com/watch?v=abc123XYZ_0"
@@ -92,15 +84,18 @@ class WakeServiceTests(unittest.TestCase):
 
         self.assertIsNone(mp3_path)
         self.assertEqual(media_url, "https://youtube.com/watch?v=abc123XYZ_0")
-        cache_mock.assert_called_once_with("https://youtube.com/watch?v=abc123XYZ_0")
 
     @patch("clap_wake.service.launch_target")
+    @patch("clap_wake.service.time.sleep")
+    @patch("clap_wake.service.build_triggered_welcome_url", return_value="http://127.0.0.1:8765/welcome/?autostart=1")
     @patch("clap_wake.service.ensure_realtime_server", return_value="http://127.0.0.1:8765/")
     @patch("clap_wake.service.open_url_foreground")
     def test_localhost_target_opens_in_order(
         self,
         open_url_mock,
         ensure_server_mock,
+        build_url_mock,
+        sleep_mock,
         launch_target_mock,
     ) -> None:
         config = self.build_config()
@@ -111,7 +106,13 @@ class WakeServiceTests(unittest.TestCase):
         service.launch_selected_targets()
 
         ensure_server_mock.assert_called_once()
-        open_url_mock.assert_called_once_with("http://127.0.0.1:8765/", bounds=None)
+        build_url_mock.assert_called_once_with("http://127.0.0.1:8765/")
+        open_url_mock.assert_called_once_with(
+            "http://127.0.0.1:8765/welcome/?autostart=1",
+            bounds=None,
+            browser_preferences=ANY,
+        )
+        sleep_mock.assert_called_once()
         launch_target_mock.assert_called_once()
 
     @patch("clap_wake.service.run_microphone_loop")
@@ -130,8 +131,8 @@ class WakeServiceTests(unittest.TestCase):
         run_loop_mock.assert_called_once()
 
     @patch("clap_wake.service.run_microphone_loop")
-    @patch("clap_wake.service.ensure_youtube_audio_cached", return_value=Path("/tmp/cached-youtube.mp3"))
-    def test_run_forever_prefetches_youtube_audio_before_microphone_loop(
+    @patch("clap_wake.service.ensure_youtube_audio_cached")
+    def test_run_forever_does_not_prefetch_selected_url_media(
         self,
         cache_mock,
         run_loop_mock,
@@ -143,9 +144,8 @@ class WakeServiceTests(unittest.TestCase):
 
         service.run_forever()
 
-        cache_mock.assert_called_once_with("https://youtube.com/watch?v=abc123XYZ_0")
+        cache_mock.assert_not_called()
         run_loop_mock.assert_called_once()
-        self.assertEqual(service._cached_url_audio_path, Path("/tmp/cached-youtube.mp3"))
 
     @patch("clap_wake.service.run_microphone_loop")
     @patch("clap_wake.service.find_highway_mp3", return_value=None)
@@ -186,6 +186,83 @@ class WakeServiceTests(unittest.TestCase):
         service.stop()
 
         stop_realtime_server_mock.assert_called_once()
+
+    def test_request_stop_sets_stop_event(self) -> None:
+        service = WakeService(config=self.build_config(), project_dir=Path("/tmp"))
+
+        service.request_stop()
+
+        self.assertTrue(service._stop_event.is_set())
+
+    @patch("clap_wake.service.capture_launchable_targets", return_value=[])
+    @patch("clap_wake.service.capture_visible_windows")
+    @patch("clap_wake.service.plan_launch_layout")
+    def test_save_current_window_layout_persists_slots_from_visible_windows(
+        self,
+        plan_mock,
+        capture_mock,
+        capture_targets_mock,
+    ) -> None:
+        del capture_targets_mock
+        config = self.build_config()
+        config["realtime"]["launch_on_clap"] = True
+        config["selected_targets"] = [{"id": "claude_web", "label": "claude.com", "url": "https://claude.com"}]
+        config["media"]["mode"] = "url"
+        config["media"]["selected_url"] = "https://youtube.com/watch?v=abc123XYZ_0"
+        service = WakeService(config=config, project_dir=Path("/tmp"))
+
+        from clap_wake.window_layout import VisibleWindow, WindowBounds
+
+        plan_mock.return_value = [
+            WindowBounds(left=10, top=10, width=400, height=300),
+            WindowBounds(left=420, top=10, width=400, height=300),
+            WindowBounds(left=830, top=10, width=400, height=300),
+        ]
+        capture_mock.return_value = [
+            VisibleWindow(owner_name="Google Chrome", bounds=WindowBounds(left=15, top=12, width=410, height=310)),
+            VisibleWindow(owner_name="Google Chrome", bounds=WindowBounds(left=425, top=14, width=405, height=305)),
+            VisibleWindow(owner_name="Google Chrome", bounds=WindowBounds(left=835, top=16, width=402, height=302)),
+        ]
+
+        saved_layout = service.save_current_window_layout()
+
+        self.assertEqual(len(saved_layout["saved_slots"]), 3)
+        self.assertEqual(service.config["window_layout"], saved_layout)
+
+    @patch("clap_wake.service.capture_launchable_targets")
+    @patch("clap_wake.service.capture_visible_windows")
+    @patch("clap_wake.service.plan_launch_layout")
+    def test_save_current_window_layout_auto_adds_detected_browser_urls(
+        self,
+        plan_mock,
+        capture_mock,
+        capture_targets_mock,
+    ) -> None:
+        config = self.build_config()
+        config["media"]["mode"] = "none"
+        service = WakeService(config=config, project_dir=Path("/tmp"))
+
+        from clap_wake.session_capture import CapturedWindowTarget
+        from clap_wake.window_layout import VisibleWindow, WindowBounds
+
+        plan_mock.return_value = [WindowBounds(left=10, top=10, width=700, height=500)]
+        capture_mock.return_value = [
+            VisibleWindow(owner_name="Google Chrome", bounds=WindowBounds(left=15, top=12, width=710, height=510))
+        ]
+        capture_targets_mock.return_value = [
+            CapturedWindowTarget(
+                target={"id": "custom_url", "label": "Docs", "url": "https://example.com/docs"},
+                bounds=WindowBounds(left=15, top=12, width=710, height=510),
+            )
+        ]
+
+        saved_layout = service.save_current_window_layout()
+
+        self.assertEqual(len(saved_layout["saved_slots"]), 1)
+        self.assertEqual(
+            service.config["window_layout"]["captured_targets"],
+            [{"id": "custom_url", "label": "Docs", "url": "https://example.com/docs"}],
+        )
 
     @patch("clap_wake.service.launch_target")
     def test_custom_targets_go_through_launcher(self, launch_target_mock) -> None:

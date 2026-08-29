@@ -376,4 +376,7 @@ def run_microphone_loop(
 
     with sd.InputStream(**stream_kwargs):
         while stop_event is None or not stop_event.is_set():
-            time.sleep(0.25)
+            if stop_event is None:
+                time.sleep(0.10)
+                continue
+            stop_event.wait(0.10)

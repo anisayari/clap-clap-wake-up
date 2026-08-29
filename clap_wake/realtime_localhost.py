@@ -5,10 +5,12 @@ import logging
 import os
 import socket
 import threading
+import time
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -37,7 +39,18 @@ def build_public_config(config: dict[str, Any]) -> dict[str, Any]:
 
 
 def build_welcome_url(base_url: str) -> str:
+    if base_url.rstrip("/").endswith("/welcome"):
+        return f"{base_url.rstrip('/')}/"
     return f"{base_url.rstrip('/')}/welcome/"
+
+
+def build_triggered_welcome_url(base_url: str) -> str:
+    parts = urlsplit(build_welcome_url(base_url))
+    query = dict(parse_qsl(parts.query, keep_blank_values=True))
+    query["autostart"] = "1"
+    query["source"] = "clap"
+    query["ts"] = str(int(time.time() * 1000))
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
 
 
 def normalize_route_prefix(route_prefix: str) -> str:
@@ -46,6 +59,10 @@ def normalize_route_prefix(route_prefix: str) -> str:
         return ""
     prefix = "/" + prefix.strip("/")
     return prefix
+
+
+def request_path(raw_path: str) -> str:
+    return urlsplit(raw_path).path or "/"
 
 
 def ensure_realtime_server(config: dict[str, Any]) -> str:
@@ -116,30 +133,46 @@ class RealtimeWelcomeServer:
 
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self) -> None:
-                if self.path in {"/", "/index.html"}:
+                route = request_path(self.path)
+                if route in {"/", "/index.html"}:
                     self._send_html(build_index_html(server.public_config()))
                     return
-
-                if self.path == "/app.js":
-                    self._send_js(build_app_js(server))
+                if route in {"/welcome", "/welcome/"}:
+                    self._send_html(build_index_html(server.public_config(), route_prefix="/welcome"))
                     return
 
-                if self.path == "/styles.css":
+                if route == "/app.js":
+                    self._send_js(build_app_js(server))
+                    return
+                if route == "/welcome/app.js":
+                    self._send_js(build_app_js_from_public_config(server.public_config(), route_prefix="/welcome"))
+                    return
+
+                if route == "/styles.css":
+                    self._send_css(build_styles_css())
+                    return
+                if route == "/welcome/styles.css":
                     self._send_css(build_styles_css())
                     return
 
-                if self.path == "/config":
+                if route == "/config":
+                    self._send_json(server.public_config())
+                    return
+                if route == "/welcome/config":
                     self._send_json(server.public_config())
                     return
 
-                if self.path == "/health":
+                if route == "/health":
+                    self._send_json({"ok": True})
+                    return
+                if route == "/welcome/health":
                     self._send_json({"ok": True})
                     return
 
                 self.send_error(HTTPStatus.NOT_FOUND, "Not Found")
 
             def do_POST(self) -> None:
-                if self.path != "/token":
+                if request_path(self.path) not in {"/token", "/welcome/token"}:
                     self.send_error(HTTPStatus.NOT_FOUND, "Not Found")
                     return
 

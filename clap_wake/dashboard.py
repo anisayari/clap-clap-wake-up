@@ -11,6 +11,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from .config import DEFAULT_CONFIG, load_config, merge_dict, migrate_config, save_config
 from .env_utils import load_env_value, save_env_value
@@ -203,98 +204,100 @@ class DashboardRuntime:
 
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self) -> None:
-                if self.path in {"/", "/index.html"}:
+                route = request_path(self.path)
+                if route in {"/", "/index.html"}:
                     self._send_html(build_dashboard_html())
                     return
-                if self.path in {"/welcome", "/welcome/"}:
+                if route in {"/welcome", "/welcome/"}:
                     self._send_html(build_realtime_index_html(build_realtime_public_config(runtime.config), route_prefix="/welcome"))
                     return
-                if self.path == "/settings":
+                if route == "/settings":
                     self._send_html(build_dashboard_settings_html())
                     return
-                if self.path == "/styles.css":
+                if route == "/styles.css":
                     self._send_css(build_dashboard_css())
                     return
-                if self.path == "/welcome/styles.css":
+                if route == "/welcome/styles.css":
                     self._send_css(build_realtime_styles_css())
                     return
-                if self.path == "/app.js":
+                if route == "/app.js":
                     self._send_js(build_dashboard_js())
                     return
-                if self.path == "/welcome/app.js":
+                if route == "/welcome/app.js":
                     self._send_js(
                         build_app_js_from_public_config(build_realtime_public_config(runtime.config), route_prefix="/welcome")
                     )
                     return
-                if self.path == "/settings.js":
+                if route == "/settings.js":
                     self._send_js(build_dashboard_settings_js())
                     return
-                if self.path == "/state":
+                if route == "/state":
                     self._send_json(runtime.state())
                     return
-                if self.path == "/welcome/config":
+                if route == "/welcome/config":
                     self._send_json(build_realtime_public_config(runtime.config))
                     return
-                if self.path == "/health":
+                if route == "/health":
                     self._send_json({"ok": True})
                     return
-                if self.path == "/welcome/health":
+                if route == "/welcome/health":
                     self._send_json({"ok": True})
                     return
                 self.send_error(HTTPStatus.NOT_FOUND, "Not Found")
 
             def do_POST(self) -> None:
+                route = request_path(self.path)
                 try:
-                    if self.path == "/trigger":
+                    if route == "/trigger":
                         runtime.trigger_now()
                         self._send_json({"ok": True})
                         return
-                    if self.path == "/player/play":
+                    if route == "/player/play":
                         runtime.play_media()
                         self._send_json({"ok": True})
                         return
-                    if self.path == "/player/toggle":
+                    if route == "/player/toggle":
                         runtime.toggle_music()
                         self._send_json({"ok": True})
                         return
-                    if self.path == "/player/next":
+                    if route == "/player/next":
                         runtime.next_music()
                         self._send_json({"ok": True})
                         return
-                    if self.path == "/player/pause":
+                    if route == "/player/pause":
                         runtime.pause_music()
                         self._send_json({"ok": True})
                         return
-                    if self.path == "/player/resume":
+                    if route == "/player/resume":
                         runtime.resume_music()
                         self._send_json({"ok": True})
                         return
-                    if self.path == "/player/stop":
+                    if route == "/player/stop":
                         runtime.stop_music()
                         self._send_json({"ok": True})
                         return
-                    if self.path == "/listener/restart":
+                    if route == "/listener/restart":
                         runtime.restart_listener()
                         self._send_json({"ok": True})
                         return
-                    if self.path == "/listener/start":
+                    if route == "/listener/start":
                         runtime.start_listener()
                         self._send_json({"ok": True})
                         return
-                    if self.path == "/listener/stop":
+                    if route == "/listener/stop":
                         runtime.stop_listener()
                         self._send_json({"ok": True})
                         return
-                    if self.path == "/config":
+                    if route == "/config":
                         payload = self._read_json()
                         runtime.save_dashboard_config(payload)
                         self._send_json({"ok": True})
                         return
-                    if self.path == "/welcome/token":
+                    if route == "/welcome/token":
                         payload = mint_ephemeral_token(runtime.config)
                         self._send_json(payload)
                         return
-                    if self.path == "/shutdown":
+                    if route == "/shutdown":
                         self._send_json({"ok": True})
                         runtime.request_shutdown()
                         return
@@ -351,6 +354,10 @@ def run_dashboard(config_path: Path, open_browser: bool = True) -> int:
     finally:
         clear_runtime_state(expected_pid=os.getpid())
     return 0
+
+
+def request_path(raw_path: str) -> str:
+    return urlsplit(raw_path).path or "/"
 
 
 def is_port_free(port: int) -> bool:

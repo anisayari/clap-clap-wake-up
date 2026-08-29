@@ -12,6 +12,7 @@ from .config import (
     get_config_path,
     get_log_path,
     load_config,
+    print_setup_banner,
     prompt_setup,
     run_clap_calibration,
     save_config,
@@ -39,6 +40,7 @@ def build_parser(default_config: Path) -> argparse.ArgumentParser:
     subparsers.add_parser("status", help="Print current config", parents=[common])
     subparsers.add_parser("detect-targets", help="Scan local paths/commands for known targets", parents=[common])
     subparsers.add_parser("calibrate", help="Calibrate clap signature", parents=[common])
+    subparsers.add_parser("save-layout", help="Save the current window layout for clap relaunch", parents=[common])
     subparsers.add_parser("run", help="Run the background listener", parents=[common])
     subparsers.add_parser("stop", help="Stop the running listener or dashboard", parents=[common])
     subparsers.add_parser("dashboard", help="Run the listener with the local dashboard", parents=[common])
@@ -125,6 +127,24 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Calibration sauvee dans: {args.config}")
         return 0
 
+    if args.command == "save-layout":
+        try:
+            config = load_config(args.config)
+        except FileNotFoundError as exc:
+            print(str(exc))
+            print(f"Lance `{build_module_command('setup')}` pour creer la configuration.")
+            return 1
+        workspace_dir = Path(config.get("workspace_dir") or Path.cwd())
+        service = WakeService(config=config, project_dir=workspace_dir)
+        saved_layout = service.save_current_window_layout()
+        save_config(config, args.config)
+        count = len(saved_layout.get("saved_slots") or [])
+        if config.get("language", "fr") == "en":
+            print(f"Saved layout with {count} slot(s) in: {args.config}")
+        else:
+            print(f"Disposition sauvegardee avec {count} emplacement(s) dans: {args.config}")
+        return 0
+
     if args.command == "tray":
         from .tray import run_tray
 
@@ -134,13 +154,14 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "dashboard":
         from .dashboard import run_dashboard
 
-        configure_logging()
         try:
-            load_config(args.config)
+            config = load_config(args.config)
         except FileNotFoundError as exc:
             print(str(exc))
             print(f"Lance `{build_module_command('setup')}` pour creer la configuration.")
             return 1
+        print_runtime_banner(config, mode="dashboard")
+        configure_logging()
         return run_dashboard(config_path=args.config)
 
     if args.command == "install-autostart":
@@ -158,25 +179,28 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "run":
-        configure_logging()
         try:
             config = load_config(args.config)
         except FileNotFoundError as exc:
             print(str(exc))
             print(f"Lance `{build_module_command('setup')}` pour creer la configuration.")
             return 1
+        print_runtime_banner(config, mode="run")
+        configure_logging()
         workspace_dir = Path(config.get("workspace_dir") or Path.cwd())
         service = WakeService(config=config, project_dir=workspace_dir)
         interrupted = False
+        shutdown_requested = False
         previous_sigint = signal.getsignal(signal.SIGINT)
         previous_sigterm = signal.getsignal(signal.SIGTERM)
         register_runtime("run", args.config)
 
         def shutdown_handler(signum, frame) -> None:
             del frame
+            nonlocal shutdown_requested
             logging.getLogger("clap_wake").info("Shutdown signal received: %s", signum)
-            service.stop()
-            raise KeyboardInterrupt
+            shutdown_requested = True
+            service.request_stop()
 
         signal.signal(signal.SIGINT, shutdown_handler)
         signal.signal(signal.SIGTERM, shutdown_handler)
@@ -190,7 +214,7 @@ def main(argv: list[str] | None = None) -> int:
             signal.signal(signal.SIGINT, previous_sigint)
             signal.signal(signal.SIGTERM, previous_sigterm)
 
-        if interrupted:
+        if interrupted or shutdown_requested:
             print("Arret demande. Clap Wake Up est stoppe.")
             return 130
         return 0
@@ -262,6 +286,21 @@ def print_detected_targets() -> None:
             if key == "found":
                 continue
             print(f"  - {key}: {value}")
+
+
+def print_runtime_banner(config: dict, mode: str) -> None:
+    language = config.get("language", "fr")
+    print_setup_banner()
+    print()
+    if language == "en":
+        label = "DASHBOARD BOOTING" if mode == "dashboard" else "LISTENER BOOTING"
+        detail = "Double clap engine is starting..." if mode == "run" else "Dashboard and listener are starting..."
+    else:
+        label = "DASHBOARD BOOTING" if mode == "dashboard" else "LISTENER BOOTING"
+        detail = "Le moteur double clap demarre..." if mode == "run" else "Le dashboard et l'ecoute demarrent..."
+    print(label)
+    print(detail)
+    print()
 
 
 def maybe_offer_post_setup_actions(config: dict, config_path: Path) -> None:

@@ -4,13 +4,18 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
+from urllib.request import urlopen
 
 from clap_wake.config import DEFAULT_CONFIG
 from clap_wake.realtime_localhost import (
+    build_triggered_welcome_url,
+    ensure_realtime_server,
+    request_path,
     RealtimeWelcomeServer,
     build_app_js,
     build_index_html,
     mint_ephemeral_token,
+    stop_realtime_server,
 )
 
 
@@ -87,6 +92,32 @@ class RealtimeLocalhostTests(unittest.TestCase):
         self.assertIn('id="liveTranscript"', html)
         self.assertIn("MAX_LOG_LINES = 160", script)
         self.assertIn("appendTranscript(event.delta)", script)
+
+    def test_build_triggered_welcome_url_adds_autostart_query(self) -> None:
+        url = build_triggered_welcome_url("http://127.0.0.1:8766/")
+
+        self.assertIn("/welcome/", url)
+        self.assertIn("autostart=1", url)
+        self.assertIn("source=clap", url)
+
+    def test_build_triggered_welcome_url_keeps_existing_welcome_route(self) -> None:
+        url = build_triggered_welcome_url("http://127.0.0.1:8766/welcome/")
+
+        self.assertEqual(url.count("/welcome/"), 1)
+        self.assertIn("autostart=1", url)
+
+    def test_request_path_strips_query_string(self) -> None:
+        self.assertEqual(request_path("/welcome/?autostart=1&source=clap"), "/welcome/")
+
+    def test_standalone_server_serves_welcome_route(self) -> None:
+        url = ensure_realtime_server(self.build_config())
+        try:
+            with urlopen(f"{url.rstrip('/')}/welcome/?autostart=1&source=clap", timeout=2) as response:
+                body = response.read().decode("utf-8")
+        finally:
+            stop_realtime_server()
+
+        self.assertIn("Clap Wake Up Voice", body)
 
 
 if __name__ == "__main__":

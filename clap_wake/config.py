@@ -60,7 +60,7 @@ AVAILABLE_TARGETS = [
 ]
 
 DEFAULT_CONFIG: dict[str, Any] = {
-    "version": 9,
+    "version": 11,
     "language": DEFAULT_LANGUAGE,
     "workspace_dir": None,
     "selected_targets": [],
@@ -97,6 +97,17 @@ DEFAULT_CONFIG: dict[str, Any] = {
     },
     "dashboard": {
         "port": 8766,
+    },
+    "window_layout": {
+        "saved_slots": [],
+        "captured_targets": [],
+        "display_count": 0,
+        "saved_at": None,
+    },
+    "browser": {
+        "app_name": None,
+        "profile_directory": None,
+        "profile_name": None,
     },
 }
 
@@ -1244,6 +1255,8 @@ def migrate_config(config: dict[str, Any]) -> None:
     realtime = config.setdefault("realtime", {})
     microphone = config.setdefault("microphone", {})
     dashboard = config.setdefault("dashboard", {})
+    window_layout = config.setdefault("window_layout", {})
+    browser = config.setdefault("browser", {})
     selected_targets = list(config.get("selected_targets", []))
     config_version = int(config.get("version", 1) or 1)
 
@@ -1274,6 +1287,8 @@ def migrate_config(config: dict[str, Any]) -> None:
     merge_dict(config["media"], media)
     merge_dict(config["microphone"], microphone)
     merge_dict(config["dashboard"], dashboard)
+    merge_dict(config["window_layout"], window_layout)
+    merge_dict(config["browser"], browser)
 
 
 def prompt_for_media(config: dict[str, Any], language: str) -> None:
